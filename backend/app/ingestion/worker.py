@@ -8,6 +8,7 @@ import asyncio
 import logging
 import random
 import signal
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -21,6 +22,7 @@ from app.cache import bump_feed_version
 from app.config import Settings, get_settings
 from app.db import create_pool
 from app.ingestion.dedupe import title_signature
+from app.ingestion.markets import refresh_quotes, refresh_spread
 from app.ingestion.normalize import NormalizedArticle, normalize
 from app.ingestion.schedule import next_poll_delay
 from app.ingestion.sources import (
@@ -161,6 +163,7 @@ class Worker:
         self.translations = TranslationQueue(pool, build_backends(settings, client),
                                              settings.translate_batch)
         self._stop = asyncio.Event()
+        self._next_market_refresh = 0.0
 
     def stop(self) -> None:
         self._stop.set()
@@ -265,6 +268,16 @@ class Worker:
             await self._invalidate_cache()
         return done
 
+    async def refresh_markets(self) -> int:
+        """Quotazioni con la stessa logica oraria delle fonti: 5 minuti, 30 a mercato chiuso."""
+        if time.monotonic() < self._next_market_refresh:
+            return 0
+        delay = next_poll_delay(datetime.now(timezone.utc), 300, 1800)
+        self._next_market_refresh = time.monotonic() + delay
+        updated = await refresh_quotes(self.pool, self.client)
+        await refresh_spread(self.pool)
+        return updated
+
     async def _loop(self, step: Callable[[], Awaitable[int]], tick_s: float) -> None:
         while not self._stop.is_set():
             try:
@@ -280,7 +293,8 @@ class Worker:
         log.info("worker started")
         # Due cicli separati: una traduzione lenta non deve ritardare il polling.
         await asyncio.gather(self._loop(self.run_once, self.settings.worker_tick_s),
-                             self._loop(self.translate_once, self.settings.translate_tick_s))
+                             self._loop(self.translate_once, self.settings.translate_tick_s),
+                             self._loop(self.refresh_markets, self.settings.worker_tick_s))
         log.info("worker stopped")
 
 

@@ -42,9 +42,6 @@ class Settings(BaseSettings):
     # Numero di reverse proxy davanti all'API: 0 = ignora X-Forwarded-For, che
     # altrimenti un client potrebbe falsificare per eludere il rate limit.
     trusted_proxy_hops: int = 0
-    # Origini ammesse dal browser, separate da virgola. Serve solo alla versione web:
-    # le app native non sono soggette a CORS.
-    cors_origins: str = ""
 
     # Worker
     worker_tick_s: float = 5.0

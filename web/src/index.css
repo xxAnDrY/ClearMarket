@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Chiaro di default, stile Apple. Il tema scuro resta disponibile dal selettore. */
+:root {
+  color-scheme: light;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --raised: #f1f5f9;
+  --line: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #0071e3;
+  --on-accent: #ffffff;
+  --glow: #bfdbfe;
+  --up: #047857;
+  --down: #dc2626;
+  --warn: #ea580c;
+  --shimmer: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --surface: #111a2e;
+  --raised: #1e293b;
+  --line: #27344a;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --accent: #4da3ff;
+  --on-accent: #06121f;
+  --glow: #2b5a94;
+  --up: #34d399;
+  --down: #f87171;
+  --warn: #fb923c;
+  --shimmer: #2a3a52;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-glow: var(--glow);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn: var(--warn);
+  --ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 0.5s var(--ease-soft) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes shimmer {
+  to { transform: translateX(100%); }
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+
+button, a { cursor: pointer; }
+
+/* Pulsanti e tab: stessa curva e stesso feedback fisico ovunque. */
+.tactile {
+  transition: all 0.2s var(--ease-soft);
+}
+.tactile:active { transform: scale(0.95); }
+
+/* Scorrimento orizzontale senza barra visibile (pillole, barra mercati). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: var(--raised);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--shimmer), transparent);
+  animation: var(--animate-shimmer);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

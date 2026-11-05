@@ -1,5 +1,0 @@
-# Caddy ottiene e rinnova da solo il certificato HTTPS per il dominio.
-{$DOMAIN} {
-	encode gzip
-	reverse_proxy api:8000
-}

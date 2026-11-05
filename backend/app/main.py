@@ -3,7 +3,7 @@ import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import asyncpg
 import jwt
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -21,6 +20,8 @@ from app.auth import CurrentUser
 from app.cache import cached_json
 from app.config import get_settings
 from app.db import create_pool
+from app.ingestion.markets import fetch_markets
+from app.ingestion.schedule import is_market_open
 from app.ratelimit import allow_request
 from app.schemas import (
     ArticleOut,
@@ -103,7 +104,7 @@ async def _feed_response(
                           separators=(",", ":"), ensure_ascii=False)
 
     params = {"c": sorted(feed_filter.categories), "t": sorted(feed_filter.tickers),
-              "any": feed_filter.match_any, "l": limit, "cur": cursor}
+              "any": feed_filter.match_any, "q": feed_filter.search, "l": limit, "cur": cursor}
     body, cache_state = await cached_json(
         redis, params, compute,
         ttl_s=settings.feed_cache_ttl_s, stale_ttl_s=settings.feed_cache_stale_ttl_s)
@@ -121,6 +122,8 @@ async def get_feed(
     scope: Annotated[Literal["all", "top"], Query(description="top = tab Top News")] = "all",
     category: Annotated[list[str], Query()] = [],
     ticker: Annotated[list[str], Query()] = [],
+    match: Annotated[Literal["all", "any"], Query(description="any = ticker OPPURE categoria")] = "all",
+    q: Annotated[str | None, Query(min_length=2, max_length=80, description="Titolo, sommario o ticker")] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
     cursor: Annotated[str | None, Query(max_length=256)] = None,
 ) -> Response:
@@ -130,7 +133,8 @@ async def get_feed(
     if scope == "top" and not categories:
         categories = await repo.top_news_categories(pool)
     feed_filter = repo.FeedFilter(categories=categories,
-                                  tickers=tuple(value.upper() for value in ticker))
+                                  tickers=tuple(value.upper() for value in ticker),
+                                  match_any=match == "any", search=q.strip() if q else None)
     return await _feed_response(request, response, pool=pool, redis=redis, feed_filter=feed_filter,
                                 limit=limit, cursor=cursor, cache_control="public, max-age=15")
 
@@ -152,6 +156,13 @@ async def get_watchlist_feed(
                                   tickers=tuple(watchlist["tickers"]), match_any=True)
     return await _feed_response(request, response, pool=pool, redis=redis, feed_filter=feed_filter,
                                 limit=limit, cursor=cursor, cache_control="private, max-age=15")
+
+
+@router.get("/markets", summary="Barra mercati e stato di apertura")
+async def get_markets(pool: Pool, response: Response) -> dict:
+    response.headers["Cache-Control"] = "public, max-age=60"
+    return {"market_open": is_market_open(datetime.now(timezone.utc)),
+            "quotes": await fetch_markets(pool)}
 
 
 @router.get("/categories", response_model=list[CategoryOut])
@@ -224,11 +235,6 @@ async def remove_bookmark(article_id: UUID, pool: Pool, user: CurrentUser) -> No
 
 app = FastAPI(title="ClearMarket API", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
-
-_cors_origins = [origin.strip() for origin in get_settings().cors_origins.split(",") if origin.strip()]
-if _cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins,
-                       allow_methods=["GET", "PUT", "DELETE"], allow_headers=["Authorization"])
 
 
 @app.get("/healthz", include_in_schema=False)

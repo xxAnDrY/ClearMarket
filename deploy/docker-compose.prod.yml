@@ -16,14 +16,13 @@ x-backend: &backend
     redis: { condition: service_started }
 
 services:
-  caddy:
-    image: caddy:2-alpine
+  web:
+    build: ../web
     restart: always
     environment:
-      DOMAIN: ${DOMAIN}
+      SITE_ADDRESS: ${DOMAIN}
     ports: ["80:80", "443:443"]
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [api]

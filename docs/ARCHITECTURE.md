@@ -19,7 +19,7 @@ flowchart LR
     R[(Redis<br/>cache, rate limit)]
   end
   subgraph API
-    GW[Reverse proxy / CDN] --> A[FastAPI]
+    GW[Caddy<br/>sito statico e HTTPS] --> A[FastAPI]
   end
   RSS --> W
   EST --> W
@@ -31,7 +31,7 @@ flowchart LR
   W -->|INCR feed:version, token bucket| R
   A -->|cache-aside| R
   A -->|miss| PG
-  M[App Flutter] -->|cursore, ETag| GW
+  M[Sito React] -->|cursore, ETag| GW
 ```
 
 Ingestion e lettura sono separate: l'API non chiama mai un provider esterno, quindi la
@@ -71,8 +71,7 @@ resta servito con i dati gia' raccolti.
 lascia passare. `X-Forwarded-For` e' ignorato finche' `TRUSTED_PROXY_HOPS` e' 0, perche' un
 client potrebbe falsificarlo.
 
-Il worker gira come processo a se' stante. Il polling lato dispositivo non serve: il telefono
-legge sempre dalla nostra API.
+Il worker gira come processo a se' stante. Il browser legge sempre dalla nostra API.
 
 ## 3. Deduplicazione
 
@@ -152,12 +151,12 @@ sono `user_bookmarks` ed `economic_events`. Fonti italiane e traduzione:
 
 | Rotta | Auth | Note |
 |---|---|---|
-| `GET /api/v1/feed` | no | `scope`, `category`, `ticker`, `limit`, `cursor`; ETag e 304 |
+| `GET /api/v1/feed` | no | `scope`, `category`, `ticker`, `match`, `limit`, `cursor`; ETag e 304 |
 | `GET /api/v1/feed/watchlist` | si' | Ticker **o** categorie dell'utente |
 | `GET /api/v1/calendar` | no | `date`, `tz` IANA, `country`, `impact` |
 | `GET /api/v1/categories` | no | Tassonomia |
 | `GET`, `PUT /api/v1/me/watchlist` | si' | PUT idempotente dello stato completo |
-| `GET /api/v1/me/bookmarks`, `PUT`, `DELETE .../{id}` | si' | L'app non ha ancora una UI per i bookmark |
+| `GET /api/v1/me/bookmarks`, `PUT`, `DELETE .../{id}` | si' | Non ancora usate dal sito |
 
 **Paginazione.** Il cursore codifica `(published_at, id)` e la query usa un confronto di riga
 coperto dall'indice `articles_feed_idx`. Rispetto a `OFFSET`, il costo non cresce con la
@@ -168,36 +167,23 @@ conservata per 300. Alla scadenza un solo processo ricalcola e gli altri servono
 stale. Se Postgres fallisce si serve la copia stale; se Redis fallisce si legge da Postgres.
 La cache e' per filtro, non per utente: chi segue gli stessi ticker condivide la voce.
 
-## 5. Notifiche push (FCM)
+## 5. Frontend
 
-1. Tabella `user_devices (user_id, fcm_token, platform, locale, last_seen_at)`; il token si
-   aggiorna a ogni avvio e su `onTokenRefresh`.
-2. Un outbox, non una chiamata diretta dal worker: l'inserimento dell'articolo e la riga
-   `notification_outbox` stanno nella stessa transazione e un processo separato invia. Cosi'
-   un riavvio non perde notifiche.
-3. Topic FCM per categorie e ticker popolari (`ticker_NVDA`): il fan-out e' di Google e costa
-   una chiamata. Token diretti solo per preferenze davvero individuali.
-4. Filtrare molto: solo fonti primarie o eventi ad alto impatto, massimo 2-3 push all'ora per
-   utente, ore silenziose nel fuso del dispositivo, chiave di collasso per storia. In un'app di
-   news il primo motivo di disinstallazione e' il rumore.
-5. Il payload porta solo `article_id` e titolo; l'app legge il resto dall'API. Su iOS serve
-   APNs e il permesso va chiesto dopo che l'utente ha seguito qualcosa, non all'avvio.
-6. Rimuovere i token su `UNREGISTERED`.
+Sito React con Vite, Tailwind e TanStack Query in `web/`. Caddy serve i file statici e inoltra
+`/api` a FastAPI sullo stesso dominio, quindi non serve CORS.
 
-## 6. Offline-first
+- **Feed:** griglia di card con paginazione a cursore e scorrimento infinito, aggiornamento ogni 5
+  minuti e al ritorno sulla scheda, pulsante manuale.
+- **Ricerca:** `q` su `/feed` cerca in titolo, sommario e ticker; i ticker delle card la usano.
+- **Barra mercati:** `GET /api/v1/markets` restituisce stato di apertura e ultime quotazioni.
+- **Watchlist:** salvata in `localStorage` e inviata come filtro `match=any`. Le rotte `/me/*` con
+  JWT restano nel backend, pronte per un login futuro, ma il sito non le usa.
+- **Link:** ogni card è un link alla fonte con `target="_blank" rel="noopener noreferrer"`.
 
-- **Cache locale con Drift (SQLite).** La lista mostra subito la tabella locale e poi
-  aggiorna dalla rete (stale-while-revalidate). Tenere 200 articoli per feed, con potatura.
-- **Cursori.** Il refresh sostituisce la testa della lista; il cursore locale resta valido
-  perche' keyset, quindi lo scroll riprende dalla coda salvata.
-- **ETag.** L'app puo' inviare `If-None-Match` sulla prima pagina: l'API risponde gia' 304.
-  In Dio va gestito con `validateStatus`.
-- **Scritture.** Watchlist e bookmark in una coda locale idempotente, svuotata al ritorno
-  della rete. Il `PUT` della watchlist e' gia' last-write-wins.
-- **Sfondo.** `workmanager` su Android e `BGAppRefreshTask` su iOS per prescaricare la prima
-  pagina; iOS decide lui quando eseguire, quindi e' un miglioramento, non una garanzia.
-- **Indicatore.** Mostrare "aggiornato alle 14:32" quando i dati sono offline: una notizia di
-  mercato vecchia presentata come attuale e' un rischio reale per l'utente.
+## 6. Notifiche ed estensioni future
+
+Il Web Push funziona su desktop e Android; su iPhone richiede l'aggiunta del sito alla schermata
+Home. Va inviato con un outbox nella stessa transazione dell'articolo e con pochi avvisi all'ora.
 
 ## 7. Rischi da chiudere prima del lancio
 
@@ -209,16 +195,15 @@ La cache e' per filtro, non per utente: chi segue gli stessi ticker condivide la
 | **Sentiment** | Lessico minimo, inglese e italiano. Sui feed reali ha sbagliato: "fear gauge surges" e un rialzo dei tassi sono risultati positivi | Mostrarlo come indicazione, oppure spegnerlo finche' non c'e' FinBERT |
 | **Normativa** | Il sentiment su un singolo titolo puo' sembrare una raccomandazione | Disclaimer "non e' consulenza finanziaria" e parere legale prima del lancio UE |
 | **Traduzioni** | Tradurre e ripubblicare estratti altrui e' un'opera derivata; la qualita' automatica puo' alterare numeri e nomi. MyMemory ha prodotto "SBI back crypto assicuratore" | Verifica legale; DeepL per la qualita'; etichetta "Tradotto" gia' presente nella card |
+| **Quotazioni** | Indici, cambio e Bitcoin arrivano dall'endpoint non ufficiale di Yahoo Finance, ritardato, senza SLA e con licenza da verificare per un sito pubblico. Lo spread BTP/Bund e' letto dai testi ANSA: si aggiorna solo quando esce una notizia e non ha la variazione | Fornitore di dati a contratto prima di un lancio pubblico |
 | **Calendario in inglese** | I nomi degli eventi del tab Calendario non vengono tradotti | Tradurli o usare un fornitore italiano |
 | **Auth Supabase** | I test coprono la verifica HS256; il ramo JWKS e il login anonimo non sono stati eseguiti | Provare con un progetto reale |
 
 ## 8. Step successivi
 
-1. Provare Supabase e Finnhub con credenziali reali, poi l'app su emulatore e iPhone.
+1. Mettere il sito online seguendo [DEPLOY.md](DEPLOY.md) e provare Finnhub e DeepL con chiavi reali.
 2. Metriche: latenza p95 di `/feed`, hit rate, eta' dell'ultimo articolo per fonte. Allarme se
    `last_success_at` di una fonte supera di 3 volte il suo intervallo.
 3. Retention: archiviare gli articoli oltre 12 mesi, partizionare `articles` per mese.
-4. Cache locale Drift (§6), poi notifiche FCM (§5), poi UI bookmark.
-5. Sentiment con FinBERT in un worker separato, che aggiorna gli articoli in modo asincrono.
-6. Aggiornamenti in tempo reale via SSE per le breaking news, solo se i dati d'uso lo
-   giustificano: con TTL di 30 secondi il pull-to-refresh copre gran parte dei casi.
+4. Login con sincronizzazione di watchlist e bookmark.
+5. Sentiment con FinBERT in un worker separato.

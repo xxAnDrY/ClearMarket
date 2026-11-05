@@ -2,6 +2,7 @@
 import base64
 import binascii
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -38,6 +39,7 @@ class FeedFilter:
     tickers: tuple[str, ...] = ()
     # True (watchlist): basta una delle due condizioni. False (query esplicita): entrambe.
     match_any: bool = False
+    search: str | None = None
 
 
 async def fetch_feed(
@@ -58,6 +60,12 @@ async def fetch_feed(
     if filters:
         joiner = " OR " if feed_filter.match_any else " AND "
         conditions.append(f"({joiner.join(filters)})")
+
+    if feed_filter.search:
+        escaped = re.sub(r"([\\%_])", r"\\\1", feed_filter.search)
+        term = bind(f"%{escaped}%")
+        conditions.append(f"(a.title ILIKE {term} OR a.summary ILIKE {term} "
+                          f"OR {bind(feed_filter.search.upper())} = ANY(a.related_tickers))")
 
     if cursor:
         published_at, article_id = decode_cursor(cursor)

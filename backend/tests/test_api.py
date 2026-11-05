@@ -108,6 +108,17 @@ async def test_category_ticker_and_scope_filters(client, pool):
     assert {item["category"] for item in top} == {"macro"}
 
 
+async def test_match_any_returns_ticker_or_category(client, pool):
+    await seed(pool, 2, category="crypto", title="Coin", tickers=("BTC",))
+    await seed(pool, 2, category="etf", title="Fund")
+    await seed(pool, 2, category="macro", title="Other")
+    params = {"ticker": "BTC", "category": "etf", "match": "any"}
+    data = (await client.get("/api/v1/feed", params=params)).json()["data"]
+    assert {item["category"] for item in data} == {"crypto", "etf"}
+    assert (await client.get("/api/v1/feed", params={**params, "match": "all"})).json()["data"] == []
+    assert (await client.get("/api/v1/feed", params={"match": "nope"})).status_code == 422
+
+
 async def test_duplicates_are_hidden(client, pool):
     sid = await pool.fetchval("SELECT id FROM sources WHERE slug = 'cnbc-investing'")
     await store_articles(pool, [normalize(

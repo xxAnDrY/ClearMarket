@@ -61,6 +61,4 @@ done
 curl -fsS "https://${domain}/healthz"
 echo
 
-# Token dell'app, valido 10 anni: senza il tab Watchlist smetterebbe di funzionare.
-echo "API_BASE_URL=https://${domain}"
-echo "DEV_JWT=$(compose exec -T api python scripts/mint_dev_token.py --days 3650)"
+echo "Sito online: https://${domain}"
