@@ -1,0 +1,45 @@
+# Stack locale. Migrazioni applicate da Postgres al primo avvio del volume.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: clearmarket
+      POSTGRES_PASSWORD: clearmarket
+      POSTGRES_DB: clearmarket
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clearmarket"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6379:6379"]
+
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    environment: &backend-env
+      DATABASE_URL: postgresql://clearmarket:clearmarket@postgres:5432/clearmarket
+      REDIS_URL: redis://redis:6379/0
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "app.ingestion.worker"]
+    env_file: ./backend/.env
+    environment: *backend-env
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+
+volumes:
+  pgdata:
