@@ -5,7 +5,14 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // In locale /live non esiste e il sito ripiega sull'istantanea in public/data.
+    // Come il redirect in netlify.toml: anche in locale il sito legge i dati pubblicati.
+    proxy: {
+      "/live": {
+        target: "https://raw.githubusercontent.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/live/, "/xxAnDrY/ClearMarket/data/public"),
+      },
+    },
   },
   test: { environment: "jsdom" },
 });

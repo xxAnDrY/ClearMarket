@@ -61,16 +61,12 @@ export const CATEGORIES: Record<string, string> = {
 
 export class ApiError extends Error {}
 
-/** Dati del job programmato, con ripiego sull'istantanea pubblicata insieme al sito. */
 async function loadData<T extends Stamped>(file: string, signal?: AbortSignal): Promise<T> {
-  for (const base of ["/live", "/data"]) {
-    try {
-      const response = await fetch(`${base}/${file}`, { signal });
-      if (response.ok) return (await response.json()) as T;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") throw error;
-      // risposta non JSON o rete assente: si prova la fonte successiva
-    }
+  try {
+    const response = await fetch(`/live/${file}`, { signal });
+    if (response.ok) return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
   }
   throw new ApiError("Dati non disponibili. Riprova tra poco.");
 }

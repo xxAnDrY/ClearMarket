@@ -11,7 +11,7 @@ flowchart LR
 Non ci sono database né processi sempre attivi. La memoria tra un giro e l'altro è `state.json`
 sul ramo `data`, sovrascritto con un solo commit per non far crescere la cronologia. Il sito legge
 tre file (`feed.json`, `markets.json`, `calendar.json`) e filtra nel browser categorie, ricerca e
-watchlist. Se `/live` non risponde usa l'istantanea in `web/public/data`.
+watchlist.
 
 ## Un giro
 

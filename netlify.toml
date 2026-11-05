@@ -8,7 +8,7 @@
   NODE_VERSION = "22"
 
 # Dati aggiornati dal job di GitHub Actions sul ramo `data`.
-# Funziona solo con repository pubblico: altrimenti il sito usa l'istantanea in public/data.
+# Funziona solo con repository pubblico.
 [[redirects]]
   from = "/live/*"
   to = "https://raw.githubusercontent.com/xxAnDrY/ClearMarket/data/public/:splat"
