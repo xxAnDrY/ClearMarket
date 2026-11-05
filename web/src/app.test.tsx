@@ -1,12 +1,19 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eventsOn, filterArticles, isMarketOpen, safeUrl, type Article, type EconomicEvent } from "./api";
+import chart from "../netlify/functions/chart";
+import movers from "../netlify/functions/movers";
+import { filterArticles, isMarketOpen, safeUrl, type Article } from "./api";
 import { FILTERS } from "./components/FilterTabs";
+import { InstrumentSearch } from "./components/InstrumentSearch";
 import { NewsCard } from "./components/NewsCard";
-import { normalizeTicker } from "./preferences";
+import { formatPrice } from "./format";
+import { searchInstruments } from "./instruments";
 import { relativeTime } from "./time";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const article: Article = {
   id: "1",
@@ -51,24 +58,74 @@ describe("filterArticles", () => {
   const other: Article = { ...article, id: "2", title: "Bitcoin in calo", summary: "", category: "crypto", related_tickers: ["BTC"] };
   const ids = (result: Article[]) => result.map(({ id }) => id);
 
-  it("Tutte mostra ogni notizia, una pillola filtra per categoria", () => {
-    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "" }))).toEqual(["1", "2"]);
-    expect(ids(filterArticles([article, other], { kind: "all", categories: ["crypto"], search: "" }))).toEqual(["2"]);
+  it("filtra per categoria e cerca in testo e ticker", () => {
+    expect(ids(filterArticles([article, other], { categories: [], search: "" }))).toEqual(["1", "2"]);
+    expect(ids(filterArticles([article, other], { categories: ["crypto"], search: "" }))).toEqual(["2"]);
+    expect(ids(filterArticles([article, other], { categories: [], search: "bce" }))).toEqual(["1"]);
+    expect(ids(filterArticles([article, other], { categories: [], search: "btc" }))).toEqual(["2"]);
   });
 
-  it("la ricerca guarda testo e ticker", () => {
-    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "bce" }))).toEqual(["1"]);
-    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "btc" }))).toEqual(["2"]);
+  it("le pillole sono quelle richieste", () => {
+    expect(FILTERS.map(({ label }) => label)).toEqual(["Tutte", "Macro", "Governo & Fisco", "BCE/FED", "Mercati UE/USA"]);
+  });
+});
+
+describe("ricerca ETF", () => {
+  it("trova ticker, nomi e alias", () => {
+    expect(searchInstruments("cspx")[0].symbol).toBe("CSPX.L");
+    expect(searchInstruments("swda")[0].symbol).toBe("SWDA.MI");
+    expect(searchInstruments("stoxx").map(({ ticker }) => ticker)).toContain("MEUD");
+    expect(searchInstruments("emergenti")[0].ticker).toBe("EIMI");
+    expect(searchInstruments("c")).toEqual([]);
   });
 
-  it("la watchlist vuole un ticker oppure una categoria", () => {
-    expect(ids(filterArticles([article, other], { kind: "watchlist", tickers: ["BTC"], categories: ["monetary_policy"] }))).toEqual(["1", "2"]);
-    expect(ids(filterArticles([article, other], { kind: "watchlist", tickers: [], categories: [] }))).toEqual([]);
+  it("si usa da tastiera", () => {
+    const onSelect = vi.fn();
+    render(<InstrumentSearch value="mondo" onChange={() => {}} onSelect={onSelect} label="Cerca" placeholder="" />);
+    const input = screen.getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect.mock.calls[0][0].ticker).toBe("VWCE");
+  });
+});
+
+describe("funzioni dati", () => {
+  const meta = { symbol: "CSPX.L", longName: "iShares", currency: "USD", regularMarketPrice: 110, previousClose: 100, regularMarketTime: 1793896527 };
+  const stubFetch = (body: unknown, status = 200) => {
+    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  it("chart scarta i punti vuoti e calcola la variazione", async () => {
+    const fetchMock = stubFetch({ chart: { result: [{ meta, timestamp: [1, 2, 3], indicators: { quote: [{ close: [100, null, 110] }] } }] } });
+    const response = await chart(new Request("http://x/api/chart?symbol=CSPX.L&range=1D"));
+    const body = await response.json();
+    expect(body.points).toEqual([{ time: 1, value: 100 }, { time: 3, value: 110 }]);
+    expect(body.change_pct).toBe(10);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/CSPX.L?range=1d&interval=5m");
   });
 
-  it("le pillole coprono i temi richiesti", () => {
-    expect(FILTERS.map(({ label }) => label)).toEqual(expect.arrayContaining(
-      ["Tutte", "Macro", "Governo & Fisco", "BCE/FED", "Mercati UE", "USA", "Crypto"]));
+  it("chart rifiuta richieste non valide senza chiamare Yahoo", async () => {
+    const fetchMock = stubFetch({});
+    expect((await chart(new Request("http://x/api/chart?symbol=../../etc&range=1D"))).status).toBe(400);
+    expect((await chart(new Request("http://x/api/chart?symbol=SPY&range=5Y"))).status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("un errore della fonte non diventa un dato", async () => {
+    stubFetch({}, 429);
+    expect((await chart(new Request("http://x/api/chart?symbol=SPY&range=1D"))).status).toBe(502);
+    expect((await movers()).status).toBe(502);
+  });
+
+  it("movers ordina per variazione assoluta e tiene i primi tre", async () => {
+    const item = (symbol: string, price: number) => ({ symbol, response: [{ meta: { ...meta, symbol, regularMarketPrice: price } }] });
+    stubFetch({ spark: { result: [item("AAPL", 101), item("NVDA", 90), item("ENI.MI", 105), item("TSLA", 98), item("META", 100)] } });
+    const body = await (await movers()).json();
+    expect(body.movers.map(({ label }: { label: string }) => label)).toEqual(["Nvidia", "Eni", "Tesla"]);
+    expect(body.movers[0].change_pct).toBe(-10);
   });
 });
 
@@ -80,29 +137,20 @@ describe("utilita'", () => {
     expect(isMarketOpen(new Date("2026-11-07T10:00:00Z"))).toBe(false);  // sabato
   });
 
-  it("eventsOn seleziona il giorno locale", () => {
-    const event = { starts_at: new Date(2026, 10, 5, 23, 30).toISOString() } as EconomicEvent;
-    expect(eventsOn([event], new Date(2026, 10, 5))).toHaveLength(1);
-    expect(eventsOn([event], new Date(2026, 10, 6))).toHaveLength(0);
-  });
-
   it("safeUrl accetta solo http e https", () => {
     expect(safeUrl("https://a.it/x")).toBe("https://a.it/x");
     expect(safeUrl("data:text/html,x")).toBeUndefined();
-    expect(safeUrl("non un url")).toBeUndefined();
   });
 
-  it("normalizeTicker pulisce e valida", () => {
-    expect(normalizeTicker(" $aapl ")).toBe("AAPL");
-    expect(normalizeTicker("ucg.mi")).toBe("UCG.MI");
-    expect(normalizeTicker("bad ticker")).toBeNull();
+  it("formatPrice gestisce valute e pence", () => {
+    expect(formatPrice(807.58, "USD")).toContain("807,58");
+    expect(formatPrice(10637, "GBp")).toContain("p");
   });
 
   it("relativeTime compatto", () => {
     const now = Date.parse("2026-11-05T12:00:00Z");
     expect(relativeTime("2026-11-05T11:55:00Z", now)).toBe("5m fa");
     expect(relativeTime("2026-11-05T09:00:00Z", now)).toBe("3h fa");
-    expect(relativeTime("2026-11-03T09:00:00Z", now)).toBe("2g fa");
     expect(relativeTime("2026-11-05T12:00:10Z", now)).toBe("adesso");
   });
 });

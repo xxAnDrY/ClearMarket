@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from clearmarket.dedupe import canonicalize_url, normalize_title, title_hash, url_hash
-from clearmarket.normalize import (
+from clearmarkets.dedupe import canonicalize_url, normalize_title, title_hash, url_hash
+from clearmarkets.normalize import (
     RawArticle,
     classify,
     clean_text,

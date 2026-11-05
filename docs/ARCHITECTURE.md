@@ -1,17 +1,30 @@
-# ClearMarket: architettura
+# ClearMarkets: architettura
 
 ```mermaid
 flowchart LR
-  F[Feed RSS italiani ed esteri<br/>Finnhub, calendario, Yahoo] --> J[GitHub Actions<br/>ogni 15-60 minuti]
+  F[Feed RSS italiani ed esteri<br/>Finnhub, Yahoo] --> J[GitHub Actions<br/>ogni 15-60 minuti]
   J -->|state.json e JSON pubblici| D[Ramo data]
   D -->|proxy /live| N[Netlify]
+  Y[Yahoo Finance] -->|/api/chart, /api/movers| N
   N --> B[Browser<br/>React]
 ```
 
 Non ci sono database né processi sempre attivi. La memoria tra un giro e l'altro è `state.json`
 sul ramo `data`, sovrascritto con un solo commit per non far crescere la cronologia. Il sito legge
-tre file (`feed.json`, `markets.json`, `calendar.json`) e filtra nel browser categorie, ricerca e
-watchlist.
+`feed.json` e `markets.json` e filtra nel browser categorie e ricerca.
+
+## Dashboard
+
+Una sola pagina: barra mercati e ricerca in alto, feed a sinistra, grafico e market mover a destra
+(sopra il feed su telefono). La ricerca universale filtra le notizie e suggerisce ETF e indici.
+
+- **`/api/chart`:** serie storica e quotazione di un simbolo per 1D, 1W, 1M, 1Y e ALL.
+- **`/api/movers`:** le tre maggiori variazioni di oggi in un paniere fisso di grandi titoli, quindi
+  non dell'intero mercato.
+- **Catalogo:** ETF e indici cercabili sono elencati in `web/src/instruments.ts`.
+
+Le funzioni accettano solo simboli e periodi validi. La CDN di Netlify conserva le risposte, così il
+traffico non si trasforma in chiamate a Yahoo.
 
 ## Un giro
 
@@ -22,7 +35,7 @@ watchlist.
    stessi numeri e nomi propri. I doppioni restano con `duplicate_of` e non vengono mostrati.
 4. **Traduzione:** gli articoli esteri restano nascosti finché non sono tradotti. Si parte dai più
    recenti, entro un tetto giornaliero che protegge le quote gratuite.
-5. **Mercati:** quotazioni Yahoo e spread letto dalle notizie italiane.
+5. **Barra mercati:** quotazioni Yahoo e spread letto dalle notizie italiane.
 6. **Pubblicazione:** ultimi 500 articoli; lo stato conserva 30 giorni.
 
 ## Cadenza
@@ -52,8 +65,7 @@ Italia è escluso perché i suoi flash su singoli titoli occupavano l'intero fee
 | Rischio | Dettaglio | Azione |
 |---|---|---|
 | **Licenze** | Titoli, estratti e traduzioni di testate terze vengono ripubblicati su un sito pubblico e nel repository | Verifica legale per fonte prima di promuovere il sito |
-| **Quotazioni** | Endpoint Yahoo non ufficiale, ritardato e senza licenza chiara; da GitHub può essere bloccato. Lo spread si aggiorna solo con le notizie e non ha variazione | Fornitore a contratto |
-| **Calendario** | JSON pubblico non ufficiale, solo settimana corrente, nomi in inglese | Fornitore a contratto |
+| **Quotazioni** | Endpoint Yahoo non ufficiale, ritardato e senza licenza chiara; da GitHub o Netlify può essere bloccato. Lo spread si aggiorna solo con le notizie e non ha variazione | Fornitore a contratto |
 | **Sentiment** | Lessico semplice, può sbagliare | Modello dedicato o rimozione |
 | **Doppioni tra lingue** | Lo stesso fatto da fonte italiana ed estera appare due volte | Confronto sui testi tradotti |
 | **Normativa** | Il sito non è consulenza finanziaria | Parere legale prima di un lancio pubblico |

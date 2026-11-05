@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0b0e11"/><path d="M6 22l7-8 5 5 8-11" fill="none" stroke="#ffb000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef3f9"/>
+    </linearGradient>
+  </defs>
+  <!-- Squircle in stile iOS -->
+  <path fill="url(#glass)" stroke="#d8e1ec" stroke-width="6" d="M256 8c107 0 152 0 196 44s52 89 52 204-8 160-52 204-89 44-196 44-152 0-196-44S8 371 8 256 16 96 60 52 149 8 256 8Z"/>
+  <!-- Due candele minimaliste -->
+  <g fill="#0071e3">
+    <rect x="178" y="118" width="20" height="276" rx="10" opacity=".45"/>
+    <rect x="146" y="196" width="84" height="150" rx="22" opacity=".45"/>
+    <rect x="314" y="90" width="20" height="276" rx="10"/>
+    <rect x="282" y="142" width="84" height="170" rx="22"/>
+  </g>
+</svg>

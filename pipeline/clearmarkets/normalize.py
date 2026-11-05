@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
 
-from clearmarket.dedupe import canonicalize_url, title_hash, url_hash
+from clearmarkets.dedupe import canonicalize_url, title_hash, url_hash
 
 SUMMARY_MAX_CHARS = 280  # solo un estratto: il testo completo resta all'editore
 _MAX_FUTURE_SKEW = timedelta(minutes=5)

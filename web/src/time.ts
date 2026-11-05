@@ -8,11 +8,5 @@ export function relativeTime(iso: string, now = Date.now()): string {
   return `${Math.round(hours / 24)}g fa`;
 }
 
-export const clockTime = (iso: string) =>
-  new Intl.DateTimeFormat("it", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-
-export const longDate = (date: Date) =>
-  new Intl.DateTimeFormat("it", { weekday: "long", day: "numeric", month: "long" }).format(date);
-
 export const dateTime = (iso: string) =>
   new Intl.DateTimeFormat("it", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));

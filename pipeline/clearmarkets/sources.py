@@ -1,7 +1,6 @@
 """Adapter delle fonti: scaricano e traducono il formato, senza toccare lo stato globale."""
 import asyncio
 import calendar
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -9,13 +8,10 @@ from typing import Any
 import feedparser
 import httpx
 
-from clearmarket.catalog import Source
-from clearmarket.normalize import RawArticle
-
-log = logging.getLogger(__name__)
+from clearmarkets.catalog import Source
+from clearmarkets.normalize import RawArticle
 
 MAX_FEED_BYTES = 5 * 1024 * 1024
-_IMPACTS = {"low", "medium", "high", "holiday"}
 
 
 class RateLimited(Exception):
@@ -27,7 +23,6 @@ class RateLimited(Exception):
 @dataclass(slots=True)
 class FetchResult:
     articles: list[RawArticle] = field(default_factory=list)
-    events: list[dict[str, Any]] = field(default_factory=list)
     etag: str | None = None
     last_modified: str | None = None
     cursor: str | None = None
@@ -41,23 +36,15 @@ def _raise_for_status(response: httpx.Response) -> None:
     response.raise_for_status()
 
 
-async def _conditional_get(client: httpx.AsyncClient, source: Source, memo: dict[str, Any]) -> httpx.Response:
+async def fetch_rss(client: httpx.AsyncClient, source: Source, memo: dict[str, Any]) -> FetchResult:
     headers = {}
     if memo.get("etag"):
         headers["If-None-Match"] = memo["etag"]
     if memo.get("last_modified"):
         headers["If-Modified-Since"] = memo["last_modified"]
-    return await client.get(source.url, headers=headers, follow_redirects=True)
-
-
-def _unchanged(memo: dict[str, Any]) -> FetchResult:
-    return FetchResult(not_modified=True, etag=memo.get("etag"), last_modified=memo.get("last_modified"))
-
-
-async def fetch_rss(client: httpx.AsyncClient, source: Source, memo: dict[str, Any]) -> FetchResult:
-    response = await _conditional_get(client, source, memo)
+    response = await client.get(source.url, headers=headers, follow_redirects=True)
     if response.status_code == 304:
-        return _unchanged(memo)
+        return FetchResult(not_modified=True, etag=memo.get("etag"), last_modified=memo.get("last_modified"))
     _raise_for_status(response)
     if len(response.content) > MAX_FEED_BYTES:
         raise ValueError(f"feed too large: {len(response.content)} bytes")
@@ -100,27 +87,3 @@ async def fetch_finnhub(client: httpx.AsyncClient, source: Source, memo: dict[st
         ))
     newest = max((int(item["id"]) for item in items if item.get("id")), default=None)
     return FetchResult(articles=articles, cursor=str(newest) if newest else memo.get("cursor"))
-
-
-async def fetch_calendar(client: httpx.AsyncClient, source: Source, memo: dict[str, Any]) -> FetchResult:
-    response = await _conditional_get(client, source, memo)
-    if response.status_code == 304:
-        return _unchanged(memo)
-    _raise_for_status(response)
-    events = []
-    for item in response.json():
-        try:
-            impact = str(item.get("impact", "")).lower()
-            events.append({
-                "title": item["title"].strip(),
-                "country": item["country"].strip().upper(),
-                "starts_at": datetime.fromisoformat(item["date"]).astimezone(timezone.utc).isoformat(),
-                "impact": impact if impact in _IMPACTS else "low",
-                "forecast": item.get("forecast") or None,
-                "previous": item.get("previous") or None,
-                "actual": item.get("actual") or None,
-            })
-        except (KeyError, ValueError, AttributeError) as exc:
-            log.warning("skipping malformed calendar event: %r (%s)", item, exc)
-    return FetchResult(events=events, etag=response.headers.get("ETag"),
-                       last_modified=response.headers.get("Last-Modified"))

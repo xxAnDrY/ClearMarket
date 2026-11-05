@@ -1,33 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { fetchFeed, filterArticles, type FeedQuery } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchFeed, filterArticles, type NewsQuery } from "../api";
 import { NewsCard, NewsCardSkeleton } from "./NewsCard";
 
 const REFRESH_MS = 5 * 60_000;
 const PAGE_SIZE = 24;
-const GRID = "grid grid-flow-dense gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2";
+const GRID = "grid grid-flow-dense gap-3 md:grid-cols-2";
 
-interface NewsCardGridProps {
-  query: FeedQuery;
-  onTicker?: (ticker: string) => void;
-  empty?: ReactNode;
-}
-
-export function NewsCardGrid({ query, onTicker, empty }: NewsCardGridProps) {
+export function NewsCardGrid({ query, onTicker }: { query: NewsQuery; onTicker?: (ticker: string) => void }) {
   const feed = useQuery({
     queryKey: ["feed"],
     queryFn: ({ signal }) => fetchFeed(signal),
     refetchInterval: REFRESH_MS,
   });
 
-  const queryKey = JSON.stringify(query);
-  const articles = useMemo(
-    () => filterArticles(feed.data?.articles ?? [], JSON.parse(queryKey) as FeedQuery),
-    [feed.data, queryKey],
-  );
+  const articles = useMemo(() => filterArticles(feed.data?.articles ?? [], query), [feed.data, query]);
 
   const [shown, setShown] = useState(PAGE_SIZE);
-  useEffect(() => setShown(PAGE_SIZE), [queryKey]);
+  useEffect(() => setShown(PAGE_SIZE), [query]);
 
   const sentinel = useRef<HTMLDivElement>(null);
   const hasMore = shown < articles.length;
@@ -64,7 +54,7 @@ export function NewsCardGrid({ query, onTicker, empty }: NewsCardGridProps) {
   }
 
   if (articles.length === 0) {
-    return <>{empty ?? <p className="rounded-2xl border border-line bg-surface px-4 py-16 text-center text-muted shadow-sm">Nessuna notizia trovata.</p>}</>;
+    return <p className="rounded-2xl border border-line bg-surface px-4 py-16 text-center text-muted shadow-sm">Nessuna notizia trovata.</p>;
   }
 
   return (

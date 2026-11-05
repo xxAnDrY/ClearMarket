@@ -10,11 +10,10 @@ from dataclasses import dataclass
 class Source:
     slug: str
     name: str
-    kind: str              # rss | finnhub | calendar
+    kind: str              # rss | finnhub
     url: str
     default_category: str
     language: str = "en"
-    min_interval_s: int = 0  # il cron gira spesso: alcune fonti vanno interrogate meno
 
 
 SOURCES = (
@@ -32,7 +31,4 @@ SOURCES = (
     # Saltate senza FINNHUB_API_KEY.
     Source("finnhub-general", "Finnhub", "finnhub", "https://finnhub.io/api/v1/news?category=general", "macro"),
     Source("finnhub-crypto", "Finnhub", "finnhub", "https://finnhub.io/api/v1/news?category=crypto", "crypto"),
-    # JSON pubblico e non ufficiale, aggiornato poche volte al giorno.
-    Source("ff-calendar", "Forex Factory", "calendar", "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-           "macro", min_interval_s=3600),
 )

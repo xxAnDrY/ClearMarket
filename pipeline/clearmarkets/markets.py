@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 import httpx
 
-log = logging.getLogger("clearmarket.markets")
+log = logging.getLogger("clearmarkets.markets")
 
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 SPREAD_SYMBOL = "BTP-BUND"

@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 import httpx
 
-log = logging.getLogger("clearmarket.translate")
+log = logging.getLogger("clearmarkets.translate")
 
 TARGET = "it"
 MAX_ATTEMPTS = 5

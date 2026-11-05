@@ -1,6 +1,6 @@
 """Un giro completo: raccoglie, deduplica, traduce e scrive i JSON del sito.
 
-Uso: `python -m clearmarket.run --out <cartella>`
+Uso: `python -m clearmarkets.run --out <cartella>`
 La cartella contiene `state.json` (memoria tra un giro e l'altro) e `public/` (dati del sito).
 Non servono database ne' processi sempre attivi: il job programmato la conserva tra i giri.
 """
@@ -15,34 +15,34 @@ from typing import Any
 
 import httpx
 
-from clearmarket.catalog import SOURCES, Source
-from clearmarket.dedupe import title_signature, trigram_similarity
-from clearmarket.markets import refresh_quotes, refresh_spread
-from clearmarket.normalize import NormalizedArticle, normalize
-from clearmarket.sources import FetchResult, RateLimited, fetch_calendar, fetch_finnhub, fetch_rss
-from clearmarket.translate import build_backends, translate_pending
+from clearmarkets.catalog import SOURCES, Source
+from clearmarkets.dedupe import title_signature, trigram_similarity
+from clearmarkets.markets import refresh_quotes, refresh_spread
+from clearmarkets.normalize import NormalizedArticle, normalize
+from clearmarkets.sources import FetchResult, RateLimited, fetch_finnhub, fetch_rss
+from clearmarkets.translate import build_backends, translate_pending
 
-log = logging.getLogger("clearmarket")
+log = logging.getLogger("clearmarkets")
 
 RETENTION_DAYS = 30
 FEED_LIMIT = 500
-EVENT_RETENTION_DAYS = 14
 QUOTE_MAX_AGE_DAYS = 7
 EXACT_WINDOW = timedelta(hours=48)
 NEAR_WINDOW = timedelta(hours=12)
 NEAR_THRESHOLD = 0.72
-USER_AGENT = "ClearMarketBot/0.2"
+USER_AGENT = "ClearMarketsBot/1.0"
 CONCURRENCY = 6
 
 
 def empty_state() -> dict[str, Any]:
-    return {"articles": [], "sources": {}, "events": {}, "quotes": {}, "translation": {}}
+    return {"articles": [], "sources": {}, "quotes": {}, "translation": {}}
 
 
 def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return empty_state()
-    return {**empty_state(), **json.loads(path.read_text(encoding="utf-8"))}
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    return {key: saved.get(key, default) for key, default in empty_state().items()}
 
 
 def _time(iso: str) -> datetime:
@@ -112,18 +112,13 @@ def add_articles(state: dict[str, Any], source: Source, incoming: list[Normalize
 async def _fetch(client: httpx.AsyncClient, source: Source, memo: dict[str, Any], finnhub_key: str | None) -> FetchResult:
     if source.kind == "rss":
         return await fetch_rss(client, source, memo)
-    if source.kind == "calendar":
-        return await fetch_calendar(client, source, memo)
     return await fetch_finnhub(client, source, memo, finnhub_key or "")
 
 
 def _is_due(source: Source, memo: dict[str, Any], now: datetime, finnhub_key: str | None) -> bool:
     if source.kind == "finnhub" and not finnhub_key:
         return False
-    if memo.get("skip_until") and now < _time(memo["skip_until"]):
-        return False
-    last = memo.get("last_success")
-    return not (last and source.min_interval_s and (now - _time(last)).total_seconds() < source.min_interval_s)
+    return not (memo.get("skip_until") and now < _time(memo["skip_until"]))
 
 
 async def collect(client: httpx.AsyncClient, state: dict[str, Any], now: datetime, finnhub_key: str | None) -> None:
@@ -152,22 +147,16 @@ async def collect(client: httpx.AsyncClient, state: dict[str, Any], now: datetim
             raw, source_slug=source.slug, default_category=source.default_category,
             lock_category=lock_category, language=source.language, now=now))]
         added = add_articles(state, source, normalized, now)
-        for event in result.events:
-            key = f"{event['title']}|{event['country']}|{event['starts_at']}"
-            previous = state["events"].get(key, {})
-            state["events"][key] = {**event, "actual": event["actual"] or previous.get("actual")}
         memo.update(etag=result.etag, last_modified=result.last_modified, cursor=result.cursor,
                     failures=0, last_error=None, skip_until=None, last_success=now.isoformat())
-        log.info("%s: %d fetched, %d new", source.slug, len(result.articles) + len(result.events), added)
+        log.info("%s: %d fetched, %d new", source.slug, len(result.articles), added)
 
     await asyncio.gather(*(one(source) for source in SOURCES))
 
 
 def prune(state: dict[str, Any], now: datetime) -> None:
-    articles = now - timedelta(days=RETENTION_DAYS)
-    state["articles"] = [item for item in state["articles"] if _time(item["published_at"]) >= articles]
-    events = now - timedelta(days=EVENT_RETENTION_DAYS)
-    state["events"] = {key: event for key, event in state["events"].items() if _time(event["starts_at"]) >= events}
+    oldest = now - timedelta(days=RETENTION_DAYS)
+    state["articles"] = [item for item in state["articles"] if _time(item["published_at"]) >= oldest]
 
 
 def _public_article(article: dict[str, Any]) -> dict[str, Any]:
@@ -190,14 +179,11 @@ def public_files(state: dict[str, Any], now: datetime) -> dict[str, dict[str, An
     visible = sorted(filter(is_visible, state["articles"]), key=lambda item: item["published_at"], reverse=True)
     oldest_quote = now - timedelta(days=QUOTE_MAX_AGE_DAYS)
     quotes = [quote for quote in state["quotes"].values() if _time(quote["as_of"]) >= oldest_quote]
-    events = sorted(state["events"].items(), key=lambda pair: (pair[1]["starts_at"], pair[1]["title"]))
     return {
         "feed.json": {"generated_at": generated_at,
                       "articles": [_public_article(item) for item in visible[:FEED_LIMIT]]},
         "markets.json": {"generated_at": generated_at,
                          "quotes": sorted(quotes, key=lambda quote: quote["order"])},
-        "calendar.json": {"generated_at": generated_at,
-                          "events": [{"id": key, **event} for key, event in events]},
     }
 
 

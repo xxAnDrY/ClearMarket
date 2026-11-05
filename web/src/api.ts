@@ -13,17 +13,6 @@ export interface Article {
   sentiment: { label: Sentiment; score: number };
 }
 
-export interface EconomicEvent {
-  id: string;
-  title: string;
-  country: string;
-  starts_at: string;
-  impact: "low" | "medium" | "high" | "holiday";
-  forecast: string | null;
-  previous: string | null;
-  actual: string | null;
-}
-
 export interface MarketQuote {
   symbol: string;
   label: string;
@@ -34,17 +23,37 @@ export interface MarketQuote {
   as_of: string;
 }
 
+export type Range = "1D" | "1W" | "1M" | "1Y" | "ALL";
+
+export interface Chart {
+  symbol: string;
+  name: string;
+  currency: string;
+  price: number | null;
+  change_pct: number | null;
+  as_of: string | null;
+  points: { time: number; value: number }[];
+}
+
+export interface Mover {
+  symbol: string;
+  label: string;
+  price: number;
+  currency: string;
+  change_pct: number;
+}
+
+export interface NewsQuery {
+  categories: string[];
+  search: string;
+}
+
 interface Stamped {
   generated_at: string;
 }
 
 export type FeedFile = Stamped & { articles: Article[] };
 export type MarketsFile = Stamped & { quotes: MarketQuote[] };
-export type CalendarFile = Stamped & { events: EconomicEvent[] };
-
-export type FeedQuery =
-  | { kind: "all"; categories: string[]; search: string }
-  | { kind: "watchlist"; tickers: string[]; categories: string[] };
 
 export const CATEGORIES: Record<string, string> = {
   macro: "Macroeconomia",
@@ -61,9 +70,9 @@ export const CATEGORIES: Record<string, string> = {
 
 export class ApiError extends Error {}
 
-async function loadData<T extends Stamped>(file: string, signal?: AbortSignal): Promise<T> {
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   try {
-    const response = await fetch(`/live/${file}`, { signal });
+    const response = await fetch(url, { signal });
     if (response.ok) return (await response.json()) as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
@@ -71,27 +80,23 @@ async function loadData<T extends Stamped>(file: string, signal?: AbortSignal): 
   throw new ApiError("Dati non disponibili. Riprova tra poco.");
 }
 
-export const fetchFeed = (signal?: AbortSignal) => loadData<FeedFile>("feed.json", signal);
-export const fetchMarkets = (signal?: AbortSignal) => loadData<MarketsFile>("markets.json", signal);
-export const fetchCalendar = (signal?: AbortSignal) => loadData<CalendarFile>("calendar.json", signal);
+export const fetchFeed = (signal?: AbortSignal) => getJson<FeedFile>("/live/feed.json", signal);
+export const fetchMarkets = (signal?: AbortSignal) => getJson<MarketsFile>("/live/markets.json", signal);
 
-export function filterArticles(articles: Article[], query: FeedQuery): Article[] {
-  if (query.kind === "watchlist") {
-    return articles.filter((article) =>
-      query.categories.includes(article.category)
-      || article.related_tickers.some((ticker) => query.tickers.includes(ticker)));
-  }
-  const term = query.search.toLowerCase();
+export const fetchChart = (symbol: string, range: Range, signal?: AbortSignal) =>
+  getJson<Chart>(`/api/chart?${new URLSearchParams({ symbol, range })}`, signal);
+
+export const fetchMovers = async (signal?: AbortSignal) =>
+  (await getJson<{ movers: Mover[] }>("/api/movers", signal)).movers;
+
+export function filterArticles(articles: Article[], { categories, search }: NewsQuery): Article[] {
+  const term = search.toLowerCase();
   return articles.filter((article) =>
-    (query.categories.length === 0 || query.categories.includes(article.category))
+    (categories.length === 0 || categories.includes(article.category))
     && (!term
       || article.title.toLowerCase().includes(term)
       || article.summary.toLowerCase().includes(term)
       || article.related_tickers.some((ticker) => ticker.toLowerCase() === term)));
-}
-
-export function eventsOn(events: EconomicEvent[], day: Date): EconomicEvent[] {
-  return events.filter((event) => new Date(event.starts_at).toDateString() === day.toDateString());
 }
 
 /** Lun-ven, 08:30-22:30 ora di Roma, a prescindere dal fuso del visitatore. */

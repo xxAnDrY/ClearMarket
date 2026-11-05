@@ -1,11 +1,12 @@
-# ClearMarket
+# ClearMarkets
 
-Sito di notizie finanziarie in italiano, senza server: un job di GitHub Actions raccoglie e traduce
-le notizie, Netlify pubblica il sito React.
+Dashboard di notizie finanziarie in italiano, con grafici di ETF e indici, senza server: un job di
+GitHub Actions raccoglie e traduce le notizie, Netlify pubblica il sito React e due funzioni leggere.
 
 ```text
 pipeline/            raccolta, deduplica, traduzione e scrittura dei JSON (Python)
-web/                 sito React con Vite e Tailwind
+web/                 dashboard React con Vite e Tailwind
+web/netlify/         funzioni per grafici e market mover
 .github/workflows/   job programmato
 ```
 
@@ -36,5 +37,5 @@ cd pipeline && pip install -e ".[dev]" && pytest
 Per provare un giro in locale:
 
 ```bash
-cd pipeline && python -m clearmarket.run --out ../.data-local
+cd pipeline && python -m clearmarkets.run --out ../.data-local
 ```

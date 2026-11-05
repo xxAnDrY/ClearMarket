@@ -6,11 +6,11 @@ import httpx
 import pytest
 import respx
 
-from clearmarket.catalog import SOURCES
-from clearmarket.markets import INSTRUMENTS, parse_chart, parse_spread, refresh_spread
-from clearmarket.normalize import RawArticle, normalize
-from clearmarket.run import add_articles, empty_state, is_visible, prune, public_files, run
-from clearmarket.translate import (
+from clearmarkets.catalog import SOURCES
+from clearmarkets.markets import INSTRUMENTS, parse_chart, parse_spread, refresh_spread
+from clearmarkets.normalize import RawArticle, normalize
+from clearmarkets.run import add_articles, empty_state, is_visible, prune, public_files, run
+from clearmarkets.translate import (
     DEEPL_URL,
     MYMEMORY_URL,
     DeepLBackend,
@@ -199,9 +199,6 @@ def mock_network(rss_title="La Bce lascia i tassi invariati"):
     respx.get(url__regex=r".*(rss|feed|\.xml|\.html).*").mock(
         return_value=httpx.Response(200, text=RSS.format(title=rss_title), headers={"ETag": '"v1"'}))
     respx.get(url__regex=r"https://query1\.finance\.yahoo\.com/.*").mock(return_value=httpx.Response(200, json=CHART))
-    respx.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json").mock(return_value=httpx.Response(200, json=[
-        {"title": "CPI y/y", "country": "usd", "date": "2026-11-05T08:30:00-05:00", "impact": "High", "forecast": "3.1%"},
-        {"title": "broken"}]))
     respx.get(MYMEMORY_URL).mock(return_value=httpx.Response(200, json={
         "responseStatus": 200, "responseData": {"translatedText": "Tradotto"}}))
 
@@ -217,13 +214,10 @@ async def test_full_run_writes_site_files_and_second_run_is_idempotent(tmp_path,
     assert feed["articles"][0]["source_url"] == "https://x.example/a"
     markets = json.loads((tmp_path / "public/markets.json").read_text(encoding="utf-8"))
     assert len(markets["quotes"]) == len(INSTRUMENTS)
-    calendar = json.loads((tmp_path / "public/calendar.json").read_text(encoding="utf-8"))
-    assert calendar["events"][0]["country"] == "USD"
+    assert sorted(path.name for path in (tmp_path / "public").iterdir()) == ["feed.json", "markets.json"]
 
     state = await run(tmp_path, NOW + timedelta(minutes=15))
     assert len(state["articles"]) == 1
-    calls = [call for call in respx.calls if "ff_calendar" in str(call.request.url)]
-    assert len(calls) == 1  # il calendario non si interroga a ogni giro
     rss = [call for call in respx.calls if "ilsole24ore.com/rss/economia" in str(call.request.url)]
     assert rss[-1].request.headers["If-None-Match"] == '"v1"'
 

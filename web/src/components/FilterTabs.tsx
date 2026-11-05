@@ -3,11 +3,7 @@ export const FILTERS = [
   { id: "macro", label: "Macro", categories: ["macro", "microeconomics"] },
   { id: "fiscal", label: "Governo & Fisco", categories: ["fiscal_policy"] },
   { id: "central", label: "BCE/FED", categories: ["monetary_policy"] },
-  { id: "eu", label: "Mercati UE", categories: ["stocks_eu"] },
-  { id: "us", label: "USA", categories: ["stocks_us"] },
-  { id: "bonds", label: "Bond", categories: ["bonds"] },
-  { id: "commodities", label: "Materie prime", categories: ["commodities"] },
-  { id: "crypto", label: "Crypto", categories: ["crypto"] },
+  { id: "markets", label: "Mercati UE/USA", categories: ["stocks_eu", "stocks_us"] },
 ] as const;
 
 export type FilterId = (typeof FILTERS)[number]["id"];
