@@ -1,9 +1,8 @@
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { isMarketOpen } from "../api";
 import type { Instrument } from "../instruments";
 import { applyTheme, initialTheme, type Theme } from "../preferences";
-import { MoonIcon, RefreshIcon, SunIcon } from "./icons";
+import { MoonIcon, SunIcon } from "./icons";
 import { InstrumentSearch } from "./InstrumentSearch";
 import { MarketBar } from "./MarketBar";
 
@@ -21,17 +20,6 @@ function MarketStatus() {
       <span className="hidden xl:inline">{open ? "Mercati aperti" : "Mercati chiusi"}</span>
       <span className="sr-only xl:hidden">{open ? "Mercati aperti" : "Mercati chiusi"}</span>
     </span>
-  );
-}
-
-function RefreshButton() {
-  const client = useQueryClient();
-  // Il polling della quotazione non deve far girare l'icona ogni 15 secondi.
-  const fetching = useIsFetching({ predicate: ({ queryKey }) => queryKey[0] !== "quote" }) > 0;
-  return (
-    <button aria-label="Aggiorna" onClick={() => void client.invalidateQueries()} className={iconButton}>
-      <RefreshIcon className={`size-4 ${fetching ? "animate-spin" : ""}`} />
-    </button>
   );
 }
 
@@ -88,7 +76,6 @@ export function Navbar({ search, onSearch, onInstrument }: NavbarProps) {
       </div>
       <div className="col-start-3 row-start-1 flex items-center gap-1 lg:col-start-4">
         <MarketStatus />
-        <RefreshButton />
         <ThemeToggle />
       </div>
     </div>
