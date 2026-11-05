@@ -13,16 +13,6 @@ export interface Article {
   sentiment: { label: Sentiment; score: number };
 }
 
-export interface FeedPage {
-  data: Article[];
-  page_info: { next_cursor: string | null; has_more: boolean; limit: number };
-}
-
-export interface Category {
-  slug: string;
-  label: string;
-}
-
 export interface EconomicEvent {
   id: string;
   title: string;
@@ -44,65 +34,78 @@ export interface MarketQuote {
   as_of: string;
 }
 
-export interface Markets {
-  market_open: boolean;
-  quotes: MarketQuote[];
+interface Stamped {
+  generated_at: string;
 }
+
+export type FeedFile = Stamped & { articles: Article[] };
+export type MarketsFile = Stamped & { quotes: MarketQuote[] };
+export type CalendarFile = Stamped & { events: EconomicEvent[] };
 
 export type FeedQuery =
   | { kind: "all"; categories: string[]; search: string }
   | { kind: "watchlist"; tickers: string[]; categories: string[] };
 
+export const CATEGORIES: Record<string, string> = {
+  macro: "Macroeconomia",
+  monetary_policy: "Politica monetaria",
+  fiscal_policy: "Politica economica",
+  microeconomics: "Microeconomia",
+  stocks_eu: "Azioni UE",
+  stocks_us: "Azioni USA",
+  bonds: "Obbligazioni",
+  commodities: "Materie prime",
+  etf: "ETF",
+  crypto: "Crypto",
+};
+
 export class ApiError extends Error {}
 
-async function get<T>(path: string, params: URLSearchParams, signal?: AbortSignal): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`${path}?${params}`, { signal });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiError("Connessione non disponibile. Riprova.");
+/** Dati del job programmato, con ripiego sull'istantanea pubblicata insieme al sito. */
+async function loadData<T extends Stamped>(file: string, signal?: AbortSignal): Promise<T> {
+  for (const base of ["/live", "/data"]) {
+    try {
+      const response = await fetch(`${base}/${file}`, { signal });
+      if (response.ok) return (await response.json()) as T;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      // risposta non JSON o rete assente: si prova la fonte successiva
+    }
   }
-  if (response.status === 429) throw new ApiError("Troppe richieste. Riprova tra un minuto.");
-  if (!response.ok) throw new ApiError("Il servizio non risponde. Riprova tra poco.");
-  return response.json() as Promise<T>;
+  throw new ApiError("Dati non disponibili. Riprova tra poco.");
 }
 
-export function feedParams(query: FeedQuery, cursor: string | null): URLSearchParams {
-  const params = new URLSearchParams({ limit: "20" });
-  query.categories.forEach((category) => params.append("category", category));
-  if (query.kind === "all") {
-    if (query.search) params.set("q", query.search);
-  } else {
-    params.set("match", "any");
-    query.tickers.forEach((ticker) => params.append("ticker", ticker));
+export const fetchFeed = (signal?: AbortSignal) => loadData<FeedFile>("feed.json", signal);
+export const fetchMarkets = (signal?: AbortSignal) => loadData<MarketsFile>("markets.json", signal);
+export const fetchCalendar = (signal?: AbortSignal) => loadData<CalendarFile>("calendar.json", signal);
+
+export function filterArticles(articles: Article[], query: FeedQuery): Article[] {
+  if (query.kind === "watchlist") {
+    return articles.filter((article) =>
+      query.categories.includes(article.category)
+      || article.related_tickers.some((ticker) => query.tickers.includes(ticker)));
   }
-  if (cursor) params.set("cursor", cursor);
-  return params;
+  const term = query.search.toLowerCase();
+  return articles.filter((article) =>
+    (query.categories.length === 0 || query.categories.includes(article.category))
+    && (!term
+      || article.title.toLowerCase().includes(term)
+      || article.summary.toLowerCase().includes(term)
+      || article.related_tickers.some((ticker) => ticker.toLowerCase() === term)));
 }
 
-export const fetchFeed = (query: FeedQuery, cursor: string | null, signal?: AbortSignal) =>
-  get<FeedPage>("/api/v1/feed", feedParams(query, cursor), signal);
-
-export const fetchCategories = (signal?: AbortSignal) =>
-  get<Category[]>("/api/v1/categories", new URLSearchParams(), signal);
-
-export const fetchMarkets = (signal?: AbortSignal) =>
-  get<Markets>("/api/v1/markets", new URLSearchParams(), signal);
-
-export function localDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+export function eventsOn(events: EconomicEvent[], day: Date): EconomicEvent[] {
+  return events.filter((event) => new Date(event.starts_at).toDateString() === day.toDateString());
 }
 
-export async function fetchEvents(day: Date, signal?: AbortSignal): Promise<EconomicEvent[]> {
-  const params = new URLSearchParams({
-    date: localDate(day),
-    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  });
-  const body = await get<{ data: EconomicEvent[] }>("/api/v1/calendar", params, signal);
-  return body.data;
+/** Lun-ven, 08:30-22:30 ora di Roma, a prescindere dal fuso del visitatore. */
+export function isMarketOpen(now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Rome", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)!.value;
+  const minutes = Number(value("hour")) * 60 + Number(value("minute"));
+  return !["Sat", "Sun"].includes(value("weekday")) && minutes >= 8 * 60 + 30 && minutes < 22 * 60 + 30;
 }
 
 /** Solo http e https: il link arriva da feed di terzi. */

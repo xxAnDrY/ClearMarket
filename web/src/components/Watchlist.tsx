@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
+import { CATEGORIES } from "../api";
 import { normalizeTicker, useWatchlist } from "../preferences";
-import { NewsCardGrid, useCategories } from "./NewsCardGrid";
+import { NewsCardGrid } from "./NewsCardGrid";
 
 export function WatchlistPage({ onTicker }: { onTicker: (ticker: string) => void }) {
   const [watchlist, save] = useWatchlist();
-  const categories = useCategories();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
 
@@ -58,7 +58,7 @@ export function WatchlistPage({ onTicker }: { onTicker: (ticker: string) => void
           </ul>
         )}
         <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {categories.map(({ slug, label }) => (
+          {Object.entries(CATEGORIES).map(([slug, label]) => (
             <button
               key={slug}
               aria-pressed={watchlist.categories.includes(slug)}

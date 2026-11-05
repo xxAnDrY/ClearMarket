@@ -1,8 +1,8 @@
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { isMarketOpen } from "../api";
 import { applyTheme, initialTheme, type Theme } from "../preferences";
 import { MoonIcon, RefreshIcon, SearchIcon, SunIcon } from "./icons";
-import { useMarkets } from "./MarketBar";
 
 export const ROUTES = [
   { hash: "#/", label: "Notizie" },
@@ -14,8 +14,7 @@ const iconButton = "tactile grid size-9 shrink-0 place-items-center rounded-full
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
 function MarketStatus() {
-  const open = useMarkets().data?.market_open;
-  if (open === undefined) return null;
+  const open = isMarketOpen();
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted">
       <span className="relative flex size-2">

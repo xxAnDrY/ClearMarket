@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.ingestion.dedupe import canonicalize_url, normalize_title, title_hash, url_hash
-from app.ingestion.normalize import (
+from clearmarket.dedupe import canonicalize_url, normalize_title, title_hash, url_hash
+from clearmarket.normalize import (
     RawArticle,
     classify,
     clean_text,
@@ -18,7 +18,7 @@ NOW = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
 
 def build(**overrides):
     fields = {"title": "Markets open flat", "url": "https://example.com/a"} | overrides
-    return normalize(RawArticle(**fields), source_id=1, default_category="macro", now=NOW)
+    return normalize(RawArticle(**fields), source_slug="x", default_category="macro", now=NOW)
 
 
 @pytest.mark.parametrize("url", [
@@ -126,3 +126,30 @@ def test_missing_date_defaults_to_now_and_naive_is_utc():
 
 def test_summary_equal_to_title_is_dropped():
     assert build(summary="Markets open flat").summary == ""
+
+
+@pytest.mark.parametrize("text,category", [
+    ("La Bce lascia i tassi di interesse invariati", "monetary_policy"),
+    ("Inflazione in calo a ottobre secondo l'Istat", "macro"),
+    ("Manovra, il governo trova l'accordo sulle tasse", "fiscal_policy"),
+    ("Spread Btp-Bund in calo", "bonds"),
+    ("Il petrolio Brent torna sopra 80 dollari", "commodities"),
+    ("Consumi delle famiglie in aumento, salari fermi", "microeconomics"),
+    ("Piazza Affari chiude in rialzo", "stocks_eu"),
+])
+def test_italian_categories(text, category):
+    assert classify(text, [], "macro") == category
+
+
+@pytest.mark.parametrize("title,label", [
+    ("Crollo di Piazza Affari, banche in forte ribasso", "negative"),
+    ("Rimbalzo delle Borse, il Ftse Mib vola", "positive"),
+    ("Borse senza rimbalzo", "negative"),
+])
+def test_italian_sentiment(title, label):
+    assert score_sentiment(title)[0] == label
+
+
+def test_common_italian_words_are_not_tickers():
+    assert extract_tickers("Elezioni generali in vista") == []
+    assert set(extract_tickers("Mediobanca e Banco BPM in rialzo")) == {"MB.MI", "BAMI.MI"}

@@ -1,18 +1,11 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, type ReactNode } from "react";
-import { fetchCategories, fetchFeed, type FeedQuery } from "../api";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { fetchFeed, filterArticles, type FeedQuery } from "../api";
 import { NewsCard, NewsCardSkeleton } from "./NewsCard";
 
-const REFRESH_MS = 5 * 60_000; // in linea con il polling del worker
+const REFRESH_MS = 5 * 60_000;
+const PAGE_SIZE = 24;
 const GRID = "grid grid-flow-dense gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2";
-
-export function useCategories() {
-  return useQuery({
-    queryKey: ["categories"],
-    queryFn: ({ signal }) => fetchCategories(signal),
-    staleTime: Infinity,
-  }).data ?? [];
-}
 
 interface NewsCardGridProps {
   query: FeedQuery;
@@ -21,30 +14,35 @@ interface NewsCardGridProps {
 }
 
 export function NewsCardGrid({ query, onTicker, empty }: NewsCardGridProps) {
-  const categories = useCategories();
-  const feed = useInfiniteQuery({
-    queryKey: ["feed", query],
-    queryFn: ({ pageParam, signal }) => fetchFeed(query, pageParam, signal),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => (page.page_info.has_more ? page.page_info.next_cursor : null),
+  const feed = useQuery({
+    queryKey: ["feed"],
+    queryFn: ({ signal }) => fetchFeed(signal),
     refetchInterval: REFRESH_MS,
   });
 
+  const queryKey = JSON.stringify(query);
+  const articles = useMemo(
+    () => filterArticles(feed.data?.articles ?? [], JSON.parse(queryKey) as FeedQuery),
+    [feed.data, queryKey],
+  );
+
+  const [shown, setShown] = useState(PAGE_SIZE);
+  useEffect(() => setShown(PAGE_SIZE), [queryKey]);
+
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = feed;
+  const hasMore = shown < articles.length;
   useEffect(() => {
     const node = sentinel.current;
-    // Dopo un errore si riprende solo col pulsante, per non ritentare a ogni scroll.
-    if (!node || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
+    if (!node || !hasMore) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) void fetchNextPage();
+        if (entries.some((entry) => entry.isIntersecting)) setShown((count) => count + PAGE_SIZE);
       },
       { rootMargin: "600px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  }, [hasMore, shown]);
 
   if (feed.isPending) {
     return (
@@ -65,26 +63,19 @@ export function NewsCardGrid({ query, onTicker, empty }: NewsCardGridProps) {
     );
   }
 
-  const articles = feed.data?.pages.flatMap((page) => page.data) ?? [];
-  // Una pagina puo' sovrapporsi a un refetch: la chiave React deve restare unica.
-  const unique = [...new Map(articles.map((article) => [article.id, article])).values()];
-  if (unique.length === 0) {
+  if (articles.length === 0) {
     return <>{empty ?? <p className="rounded-2xl border border-line bg-surface px-4 py-16 text-center text-muted shadow-sm">Nessuna notizia trovata.</p>}</>;
   }
 
   return (
     <>
       <div className={GRID}>
-        {unique.map((article, index) => (
-          <NewsCard key={article.id} article={article} categories={categories} featured={index === 0} onTicker={onTicker} />
+        {articles.slice(0, shown).map((article, index) => (
+          <NewsCard key={article.id} article={article} featured={index === 0} onTicker={onTicker} />
         ))}
       </div>
       <div ref={sentinel} className="py-6 text-center text-sm text-muted">
-        {feed.isFetchNextPageError ? (
-          <button onClick={() => void feed.fetchNextPage()} className="tactile font-semibold text-accent">
-            Caricamento non riuscito. Riprova
-          </button>
-        ) : feed.hasNextPage ? "Caricamento…" : "Sei aggiornato"}
+        {hasMore ? "Caricamento…" : "Sei aggiornato"}
       </div>
     </>
   );

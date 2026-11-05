@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { feedParams, safeUrl, type Article } from "./api";
+import { eventsOn, filterArticles, isMarketOpen, safeUrl, type Article, type EconomicEvent } from "./api";
 import { FILTERS } from "./components/FilterTabs";
 import { NewsCard } from "./components/NewsCard";
 import { normalizeTicker } from "./preferences";
@@ -23,7 +23,7 @@ const article: Article = {
 
 describe("NewsCard", () => {
   it("apre la fonte in una nuova scheda e mostra i metadati", () => {
-    render(<NewsCard article={article} categories={[{ slug: "monetary_policy", label: "Politica monetaria" }]} />);
+    render(<NewsCard article={article} />);
     const link = screen.getByRole("link");
     expect(link.getAttribute("href")).toBe("https://example.com/a");
     expect(link.getAttribute("target")).toBe("_blank");
@@ -35,31 +35,35 @@ describe("NewsCard", () => {
 
   it("il ticker cerca senza aprire la fonte", () => {
     const onTicker = vi.fn();
-    render(<NewsCard article={article} categories={[]} onTicker={onTicker} />);
+    render(<NewsCard article={article} onTicker={onTicker} />);
     fireEvent.click(screen.getByRole("button", { name: "Cerca AAPL" }));
     expect(onTicker).toHaveBeenCalledWith("AAPL");
     expect(screen.getByRole("link").contains(screen.getByRole("button"))).toBe(false);
   });
 
   it("non crea link per schemi pericolosi", () => {
-    render(<NewsCard article={{ ...article, source_url: "javascript:alert(1)" }} categories={[]} />);
+    render(<NewsCard article={{ ...article, source_url: "javascript:alert(1)" }} />);
     expect(screen.queryByRole("link")).toBeNull();
   });
 });
 
-describe("feedParams", () => {
-  it("Tutte non filtra, una pillola invia le sue categorie e la ricerca", () => {
-    expect(feedParams({ kind: "all", categories: [], search: "" }, null).toString()).toBe("limit=20");
-    const filtered = feedParams({ kind: "all", categories: ["macro", "microeconomics"], search: "spread" }, null);
-    expect(filtered.getAll("category")).toEqual(["macro", "microeconomics"]);
-    expect(filtered.get("q")).toBe("spread");
+describe("filterArticles", () => {
+  const other: Article = { ...article, id: "2", title: "Bitcoin in calo", summary: "", category: "crypto", related_tickers: ["BTC"] };
+  const ids = (result: Article[]) => result.map(({ id }) => id);
+
+  it("Tutte mostra ogni notizia, una pillola filtra per categoria", () => {
+    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "" }))).toEqual(["1", "2"]);
+    expect(ids(filterArticles([article, other], { kind: "all", categories: ["crypto"], search: "" }))).toEqual(["2"]);
   });
 
-  it("la watchlist chiede ticker oppure categorie e porta il cursore", () => {
-    const params = feedParams({ kind: "watchlist", tickers: ["AAPL", "BTC"], categories: ["etf"] }, "abc");
-    expect(params.get("match")).toBe("any");
-    expect(params.getAll("ticker")).toEqual(["AAPL", "BTC"]);
-    expect(params.get("cursor")).toBe("abc");
+  it("la ricerca guarda testo e ticker", () => {
+    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "bce" }))).toEqual(["1"]);
+    expect(ids(filterArticles([article, other], { kind: "all", categories: [], search: "btc" }))).toEqual(["2"]);
+  });
+
+  it("la watchlist vuole un ticker oppure una categoria", () => {
+    expect(ids(filterArticles([article, other], { kind: "watchlist", tickers: ["BTC"], categories: ["monetary_policy"] }))).toEqual(["1", "2"]);
+    expect(ids(filterArticles([article, other], { kind: "watchlist", tickers: [], categories: [] }))).toEqual([]);
   });
 
   it("le pillole coprono i temi richiesti", () => {
@@ -69,6 +73,19 @@ describe("feedParams", () => {
 });
 
 describe("utilita'", () => {
+  it("isMarketOpen usa l'ora di Roma", () => {
+    expect(isMarketOpen(new Date("2026-11-05T10:00:00Z"))).toBe(true);   // giovedi' 11:00
+    expect(isMarketOpen(new Date("2026-11-05T07:00:00Z"))).toBe(false);  // 08:00
+    expect(isMarketOpen(new Date("2026-11-05T22:00:00Z"))).toBe(false);  // 23:00
+    expect(isMarketOpen(new Date("2026-11-07T10:00:00Z"))).toBe(false);  // sabato
+  });
+
+  it("eventsOn seleziona il giorno locale", () => {
+    const event = { starts_at: new Date(2026, 10, 5, 23, 30).toISOString() } as EconomicEvent;
+    expect(eventsOn([event], new Date(2026, 10, 5))).toHaveLength(1);
+    expect(eventsOn([event], new Date(2026, 10, 6))).toHaveLength(0);
+  });
+
   it("safeUrl accetta solo http e https", () => {
     expect(safeUrl("https://a.it/x")).toBe("https://a.it/x");
     expect(safeUrl("data:text/html,x")).toBeUndefined();

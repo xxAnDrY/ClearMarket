@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchMarkets, type MarketQuote } from "../api";
-import { dateTime } from "../time";
+import { dateTime, relativeTime } from "../time";
 
 export function useMarkets() {
   return useQuery({
     queryKey: ["markets"],
     queryFn: ({ signal }) => fetchMarkets(signal),
-    refetchInterval: 60_000,
+    refetchInterval: 5 * 60_000,
   });
 }
 
@@ -33,8 +33,9 @@ function Change({ value }: { value: number }) {
 
 /** Non mostra mai valori inventati: senza dati la barra non occupa spazio. */
 export function MarketBar() {
-  const quotes = useMarkets().data?.quotes ?? [];
-  if (quotes.length === 0) return null;
+  const markets = useMarkets().data;
+  const quotes = markets?.quotes ?? [];
+  if (!markets || quotes.length === 0) return null;
   return (
     <section aria-label="Mercati" className="border-b border-line bg-surface">
       <div className="no-scrollbar relative mx-auto flex max-w-7xl items-center gap-6 overflow-x-auto px-4 py-1.5 text-xs">
@@ -45,7 +46,7 @@ export function MarketBar() {
             {quote.change_pct !== null && <Change value={quote.change_pct} />}
           </div>
         ))}
-        <span className="ml-auto shrink-0 pl-4 text-[11px] text-muted">Dati ritardati</span>
+        <span className="ml-auto shrink-0 pl-4 text-[11px] text-muted">Aggiornato {relativeTime(markets.generated_at)} · dati ritardati</span>
       </div>
     </section>
   );

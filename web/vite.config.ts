@@ -5,8 +5,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // In sviluppo le chiamate restano same-origin, come in produzione dietro Caddy.
-    proxy: { "/api": "http://127.0.0.1:8000" },
+    // In locale /live non esiste e il sito ripiega sull'istantanea in public/data.
   },
   test: { environment: "jsdom" },
 });

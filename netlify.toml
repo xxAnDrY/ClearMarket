@@ -7,10 +7,22 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# Netlify ospita solo il sito: API, worker e database restano su un server.
-# Quando il backend e' online, togli il commento e metti il suo dominio.
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://IL-TUO-BACKEND/api/:splat"
-#   status = 200
-#   force = true
+# Dati aggiornati dal job di GitHub Actions sul ramo `data`.
+# Funziona solo con repository pubblico: altrimenti il sito usa l'istantanea in public/data.
+[[redirects]]
+  from = "/live/*"
+  to = "https://raw.githubusercontent.com/xxAnDrY/ClearMarket/data/public/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

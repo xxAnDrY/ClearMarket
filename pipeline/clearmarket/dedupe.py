@@ -2,17 +2,13 @@
 
 La deduplicazione lavora su tre livelli, dal piu' certo al piu' euristico:
 
-  L1  url_hash    SHA-256 della URL canonica. Vincolo UNIQUE: il duplicato non
-                  viene inserito. Copre i re-fetch dello stesso feed.
-  L2  title_hash  SHA-256 del titolo normalizzato, confrontato solo in una finestra
-                  temporale: "Fed holds rates steady" torna ogni qualche mese ed
-                  e' una notizia nuova. Copre la syndication tra testate.
-  L3  pg_trgm     similarita' sul titolo in una finestra breve, solo se i titoli hanno la
-                  stessa firma (numeri e nomi propri). I trigrammi da soli considerano
-                  uguali "Fed holds rates steady" e "ECB holds rates steady".
+  L1  url_hash    SHA-256 della URL canonica: il duplicato non viene aggiunto.
+  L2  title_hash  SHA-256 del titolo normalizzato, confrontato solo entro 48 ore: "Fed holds
+                  rates steady" torna ogni qualche mese ed e' una notizia nuova.
+  L3  trigrammi   similarita' sul titolo entro 12 ore, solo con la stessa firma (numeri e nomi
+                  propri). I trigrammi da soli fonderebbero Fed ed ECB nello stesso titolo.
 
-L2 e L3 non scartano: salvano la riga con `duplicate_of` e il feed la nasconde. Un
-falso positivo e' quindi reversibile con una UPDATE.
+L2 e L3 non scartano: tengono l'articolo con `duplicate_of` e il sito non lo mostra.
 """
 import hashlib
 import re
@@ -68,3 +64,17 @@ def title_signature(title: str) -> frozenset[str]:
     """
     tokens = _SIGNATURE_TOKEN.findall(_OUTLET_SUFFIX.sub("", title))
     return frozenset(token.lower() for token in tokens if not token[0].islower())
+
+
+def _trigrams(text: str) -> set[str]:
+    grams: set[str] = set()
+    for word in re.findall(r"\w+", text.lower()):
+        padded = f"  {word} "
+        grams.update(padded[index:index + 3] for index in range(len(padded) - 2))
+    return grams
+
+
+def trigram_similarity(first: str, second: str) -> float:
+    """Jaccard sui trigrammi di parola, come `similarity()` di pg_trgm."""
+    a, b = _trigrams(first), _trigrams(second)
+    return len(a & b) / len(a | b) if a and b else 0.0

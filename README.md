@@ -1,33 +1,27 @@
 # ClearMarket
 
-Sito web di notizie finanziarie in italiano: worker di ingestion e API in Python (FastAPI),
-PostgreSQL, Redis e frontend React con Vite e Tailwind.
-
-- Architettura e rischi aperti: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Messa online 24/7: [docs/DEPLOY.md](docs/DEPLOY.md)
+Sito di notizie finanziarie in italiano, senza server: un job di GitHub Actions raccoglie e traduce
+le notizie, Netlify pubblica il sito React.
 
 ```text
-backend/    API, worker, traduzione, migrazioni SQL e test
-web/        sito React e configurazione Caddy
-deploy/     stack di produzione per un server
-archive/    vecchia app Flutter, solo come riferimento
+pipeline/            raccolta, deduplica, traduzione e scrittura dei JSON (Python)
+web/                 sito React con Vite e Tailwind
+.github/workflows/   job programmato
+archive/             vecchia app Flutter, solo come riferimento
 ```
 
-## Avvio in locale
+Architettura e limiti: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Serve Docker. Copia `backend/.env.example` in `backend/.env`. Le chiavi sono facoltative: senza
-`FINNHUB_API_KEY` le fonti Finnhub restano in backoff, senza `DEEPL_API_KEY` si usa la quota ridotta
-di MyMemory.
+## Messa online
 
-```bash
-docker compose up --build
-```
+1. Su Netlify collega questo repository: `netlify.toml` contiene già tutte le impostazioni.
+2. Rendi pubblico il repository (GitHub > Settings > General > Danger Zone). Con un repository
+   privato il sito non riceve gli aggiornamenti e mostra l'istantanea in `web/public/data`.
+3. In GitHub > Settings > Secrets and variables > Actions aggiungi `DEEPL_API_KEY` e, se vuoi,
+   `FINNHUB_API_KEY`. Sono facoltative.
+4. In GitHub > Actions apri **Aggiorna dati** e lancia **Run workflow**.
 
-Il sito è su `http://localhost:8080`. Le notizie compaiono entro un paio di minuti.
-
-## Sviluppo del sito
-
-Con il backend attivo su `127.0.0.1:8000`:
+## Sviluppo
 
 ```bash
 cd web && npm install && npm run dev
@@ -37,26 +31,12 @@ cd web && npm install && npm run dev
 npm test && npm run build
 ```
 
-## Test del backend
-
-Serve un database usa-e-getta: lo schema viene cancellato e ricreato a ogni esecuzione.
-
 ```bash
-cd backend && pip install -e ".[dev]"
+cd pipeline && pip install -e ".[dev]" && pytest
 ```
 
-```bash
-TEST_DATABASE_URL=postgresql://clearmarket:clearmarket@localhost:5432/clearmarket_test pytest
-```
-
-## Aggiornare un database già creato
-
-Le migrazioni vengono eseguite solo quando il volume Postgres è nuovo:
+Per generare i dati in locale e aggiornare l'istantanea del sito:
 
 ```bash
-docker compose exec -T postgres psql -U clearmarket clearmarket < backend/migrations/003_italian_feed.sql
-```
-
-```bash
-docker compose exec -T postgres psql -U clearmarket clearmarket < backend/migrations/004_market_quotes.sql
+cd pipeline && python -m clearmarket.run --out ../.data-local
 ```

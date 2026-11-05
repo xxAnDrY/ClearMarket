@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
 
-from app.ingestion.dedupe import canonicalize_url, title_hash, url_hash
+from clearmarket.dedupe import canonicalize_url, title_hash, url_hash
 
 SUMMARY_MAX_CHARS = 280  # solo un estratto: il testo completo resta all'editore
 _MAX_FUTURE_SKEW = timedelta(minutes=5)
@@ -23,7 +23,7 @@ class RawArticle:
 
 @dataclass(slots=True)
 class NormalizedArticle:
-    source_id: int
+    source_slug: str
     category: str
     title: str
     summary: str
@@ -228,7 +228,7 @@ def score_sentiment(title: str, summary: str = "") -> tuple[str, float]:
 def normalize(
     raw: RawArticle,
     *,
-    source_id: int,
+    source_slug: str,
     default_category: str,
     lock_category: bool = False,
     language: str = "it",
@@ -260,7 +260,7 @@ def normalize(
     label, score = score_sentiment(title, summary)
     canonical = canonicalize_url(url)
     return NormalizedArticle(
-        source_id=source_id,
+        source_slug=source_slug,
         category=classify(text, tickers, default_category, lock_category),
         title=title,
         summary=summary,

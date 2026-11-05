@@ -1,10 +1,9 @@
-import { safeUrl, type Article, type Category } from "../api";
+import { CATEGORIES, safeUrl, type Article } from "../api";
 import { relativeTime } from "../time";
 import { ArrowIcon } from "./icons";
 
 interface NewsCardProps {
   article: Article;
-  categories: Category[];
   featured?: boolean;
   onTicker?: (ticker: string) => void;
 }
@@ -14,9 +13,9 @@ const SENTIMENT = {
   negative: { mark: "▼", label: "Sentiment negativo", color: "text-down" },
 };
 
-export function NewsCard({ article, categories, featured = false, onTicker }: NewsCardProps) {
+export function NewsCard({ article, featured = false, onTicker }: NewsCardProps) {
   const href = safeUrl(article.source_url);
-  const category = categories.find(({ slug }) => slug === article.category)?.label;
+  const category = CATEGORIES[article.category];
   const sentiment = article.sentiment.label === "neutral" ? null : SENTIMENT[article.sentiment.label];
   const titleClass = `${featured ? "text-xl lg:text-2xl" : "text-base"} line-clamp-3 font-semibold leading-snug tracking-tight text-text transition-colors duration-200 group-hover:text-accent`;
 

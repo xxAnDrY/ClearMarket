@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchEvents, localDate, type EconomicEvent } from "../api";
+import { eventsOn, fetchCalendar, type EconomicEvent } from "../api";
 import { clockTime, longDate } from "../time";
 
 const IMPACT: Record<EconomicEvent["impact"], { label: string; dot: string }> = {
@@ -12,9 +12,10 @@ const IMPACT: Record<EconomicEvent["impact"], { label: string; dot: string }> = 
 
 function useEvents(day: Date) {
   return useQuery({
-    queryKey: ["calendar", localDate(day)],
-    queryFn: ({ signal }) => fetchEvents(day, signal),
+    queryKey: ["calendar"],
+    queryFn: ({ signal }) => fetchCalendar(signal),
     staleTime: 5 * 60_000,
+    select: (file) => eventsOn(file.events, day),
   });
 }
 

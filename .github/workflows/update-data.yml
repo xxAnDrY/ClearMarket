@@ -1,0 +1,50 @@
+# Raccoglie le notizie e pubblica i JSON del sito sul ramo `data`.
+# GitHub puo' ritardare i job programmati: gli orari sono indicativi.
+name: Aggiorna dati
+
+on:
+  schedule:
+    - cron: "*/15 7-20 * * 1-5" # mercati aperti, orario UTC: circa ogni 15 minuti
+    - cron: "5 * * * *"         # il resto del tempo: ogni ora
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ./pipeline
+
+      - name: Recupera lo stato del giro precedente
+        run: |
+          git fetch --depth 1 origin data && git archive FETCH_HEAD | { mkdir -p data-out && tar -x -C data-out; } \
+            || mkdir -p data-out
+
+      - name: Raccogli e traduci
+        run: python -m clearmarket.run --out data-out
+        env:
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+
+      # Un solo commit, sovrascritto ogni volta: lo storico non cresce all'infinito.
+      - name: Pubblica sul ramo data
+        working-directory: data-out
+        run: |
+          git init -q -b data
+          git config user.name "clearmarket-bot"
+          git config user.email "clearmarket-bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Aggiorna dati"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
