@@ -60,7 +60,7 @@ export function App() {
       </div>
 
       <footer className="mx-auto max-w-7xl px-4 pt-4 pb-8 text-xs leading-relaxed text-muted">
-        Notizie di terze parti, con link alla fonte originale. Quotazioni ritardate; traduzioni e sentiment automatici possono contenere errori. Non è consulenza finanziaria.
+        Notizie di terze parti, con link alla fonte originale. Le quotazioni possono essere ritardate; il sentiment è automatico e può contenere errori. Non è consulenza finanziaria.
       </footer>
     </>
   );

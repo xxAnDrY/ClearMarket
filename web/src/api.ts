@@ -6,7 +6,7 @@ export interface Article {
   summary: string;
   source: { slug: string; name: string };
   source_url: string;
-  translated: boolean;
+  language: string;
   published_at: string;
   category: string;
   related_tickers: string[];
@@ -29,10 +29,18 @@ export interface Chart {
   symbol: string;
   name: string;
   currency: string;
-  price: number | null;
-  change_pct: number | null;
-  as_of: string | null;
+  previous_close: number | null;
   points: { time: number; value: number }[];
+}
+
+export interface Quote {
+  symbol: string;
+  currency: string;
+  price: number | null;
+  previous_close: number | null;
+  change_pct: number | null;
+  market_time: number | null;
+  is_open: boolean;
 }
 
 export interface Mover {
@@ -85,6 +93,9 @@ export const fetchMarkets = (signal?: AbortSignal) => getJson<MarketsFile>("/liv
 
 export const fetchChart = (symbol: string, range: Range, signal?: AbortSignal) =>
   getJson<Chart>(`/api/chart?${new URLSearchParams({ symbol, range })}`, signal);
+
+export const fetchQuote = (symbol: string, signal?: AbortSignal) =>
+  getJson<Quote>(`/api/quote?${new URLSearchParams({ symbol })}`, signal);
 
 export const fetchMovers = async (signal?: AbortSignal) =>
   (await getJson<{ movers: Mover[] }>("/api/movers", signal)).movers;

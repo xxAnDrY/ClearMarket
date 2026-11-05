@@ -35,9 +35,6 @@ class NormalizedArticle:
     url_hash: bytes = field(repr=False)
     title_hash: bytes = field(repr=False)
     language: str = "it"
-    title_original: str = ""
-    summary_original: str = ""
-    translation_status: str = "not_needed"
 
 
 class _TextExtractor(HTMLParser):
@@ -254,7 +251,6 @@ def normalize(
     if published_at > now + _MAX_FUTURE_SKEW:
         published_at = now
 
-    # Ticker, categoria e sentiment usano sempre il testo originale.
     text = f"{title}. {summary}"
     tickers = extract_tickers(text, raw.tickers)
     label, score = score_sentiment(title, summary)
@@ -272,7 +268,4 @@ def normalize(
         url_hash=url_hash(canonical),
         title_hash=title_hash(title),
         language=language,
-        title_original=title,
-        summary_original=summary,
-        translation_status="not_needed" if language == "it" else "pending",
     )

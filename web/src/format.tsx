@@ -1,5 +1,5 @@
 export function formatNumber(value: number, decimals = 2): string {
-  return new Intl.NumberFormat("it", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
+  return new Intl.NumberFormat("it", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: "always" }).format(value);
 }
 
 export function formatPrice(value: number, currency: string): string {
@@ -7,6 +7,20 @@ export function formatPrice(value: number, currency: string): string {
   // GBp sono pence: il formato monetario standard non li gestisce.
   if (currency === "GBp") return `${formatNumber(value)} p`;
   return new Intl.NumberFormat("it", { style: "currency", currency }).format(value);
+}
+
+/** Prezzo con tutta la precisione utile: sotto i 10 servono piu' decimali. */
+export function formatExact(value: number, currency: string, scale = value): string {
+  const decimals = Math.abs(scale) < 10 ? 4 : 2;
+  const number = formatNumber(value, decimals);
+  if (!currency || currency === "GBp") return currency ? `${number} p` : number;
+  const symbol = new Intl.NumberFormat("it", { style: "currency", currency }).formatToParts(0)
+    .find((part) => part.type === "currency")?.value ?? currency;
+  return `${number} ${symbol}`;
+}
+
+export function formatSigned(value: number, text: string): string {
+  return `${value >= 0 ? "+" : "-"}${text.replace(/^-/, "")}`;
 }
 
 export function Change({ value, className = "" }: { value: number; className?: string }) {

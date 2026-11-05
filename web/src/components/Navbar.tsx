@@ -26,7 +26,8 @@ function MarketStatus() {
 
 function RefreshButton() {
   const client = useQueryClient();
-  const fetching = useIsFetching() > 0;
+  // Il polling della quotazione non deve far girare l'icona ogni 15 secondi.
+  const fetching = useIsFetching({ predicate: ({ queryKey }) => queryKey[0] !== "quote" }) > 0;
   return (
     <button aria-label="Aggiorna" onClick={() => void client.invalidateQueries()} className={iconButton}>
       <RefreshIcon className={`size-4 ${fetching ? "animate-spin" : ""}`} />

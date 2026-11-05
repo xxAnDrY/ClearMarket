@@ -1,12 +1,12 @@
 # ClearMarkets
 
-Dashboard di notizie finanziarie in italiano, con grafici di ETF e indici, senza server: un job di
-GitHub Actions raccoglie e traduce le notizie, Netlify pubblica il sito React e due funzioni leggere.
+Dashboard di notizie finanziarie in italiano e inglese, con grafici di ETF e indici, senza server: un
+job di GitHub Actions raccoglie le notizie, Netlify pubblica il sito React e tre funzioni leggere.
 
 ```text
-pipeline/            raccolta, deduplica, traduzione e scrittura dei JSON (Python)
+pipeline/            raccolta, deduplica e scrittura dei JSON (Python)
 web/                 dashboard React con Vite e Tailwind
-web/netlify/         funzioni per grafici e market mover
+web/netlify/         funzioni per grafici, quotazioni e market mover
 .github/workflows/   job programmato
 ```
 
@@ -16,8 +16,7 @@ Architettura e limiti: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 1. Su Netlify collega questo repository: `netlify.toml` contiene già tutte le impostazioni.
 2. Tieni pubblico il repository: il sito legge i dati dal ramo `data`, che da privato non è raggiungibile.
-3. In GitHub > Settings > Secrets and variables > Actions aggiungi `DEEPL_API_KEY` e, se vuoi,
-   `FINNHUB_API_KEY`. Sono facoltative.
+3. Se vuoi Finnhub, aggiungi `FINNHUB_API_KEY` in GitHub > Settings > Secrets and variables > Actions.
 4. In GitHub > Actions apri **Aggiorna dati** e lancia **Run workflow**.
 
 ## Sviluppo

@@ -1,4 +1,4 @@
-"""Un giro completo: raccoglie, deduplica, traduce e scrive i JSON del sito.
+"""Un giro completo: raccoglie, deduplica e scrive i JSON del sito.
 
 Uso: `python -m clearmarkets.run --out <cartella>`
 La cartella contiene `state.json` (memoria tra un giro e l'altro) e `public/` (dati del sito).
@@ -20,29 +20,30 @@ from clearmarkets.dedupe import title_signature, trigram_similarity
 from clearmarkets.markets import refresh_quotes, refresh_spread
 from clearmarkets.normalize import NormalizedArticle, normalize
 from clearmarkets.sources import FetchResult, RateLimited, fetch_finnhub, fetch_rss
-from clearmarkets.translate import build_backends, translate_pending
 
 log = logging.getLogger("clearmarkets")
 
-RETENTION_DAYS = 30
-FEED_LIMIT = 500
+STATE_VERSION = 2
+RETENTION_DAYS = 14
+FEED_LIMIT = 800
 QUOTE_MAX_AGE_DAYS = 7
 EXACT_WINDOW = timedelta(hours=48)
 NEAR_WINDOW = timedelta(hours=12)
 NEAR_THRESHOLD = 0.72
 USER_AGENT = "ClearMarketsBot/1.0"
-CONCURRENCY = 6
+CONCURRENCY = 10
 
 
 def empty_state() -> dict[str, Any]:
-    return {"articles": [], "sources": {}, "quotes": {}, "translation": {}}
+    return {"version": STATE_VERSION, "articles": [], "sources": {}, "quotes": {}}
 
 
 def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return empty_state()
     saved = json.loads(path.read_text(encoding="utf-8"))
-    return {key: saved.get(key, default) for key, default in empty_state().items()}
+    # Uno stato di formato diverso si butta: le fonti lo ricostruiscono in un giro.
+    return saved if saved.get("version") == STATE_VERSION else empty_state()
 
 
 def _time(iso: str) -> datetime:
@@ -50,7 +51,7 @@ def _time(iso: str) -> datetime:
 
 
 def is_visible(article: dict[str, Any]) -> bool:
-    return article["duplicate_of"] is None and article["translation_status"] in ("not_needed", "done")
+    return article["duplicate_of"] is None
 
 
 def find_duplicate(candidate: NormalizedArticle, articles: list[dict[str, Any]]) -> str | None:
@@ -64,11 +65,11 @@ def find_duplicate(candidate: NormalizedArticle, articles: list[dict[str, Any]])
              and abs(_time(article["published_at"]) - candidate.published_at) <= EXACT_WINDOW]
     if exact:
         return min(exact, key=lambda article: article["published_at"])["id"]
-    signature = title_signature(candidate.title_original)
+    signature = title_signature(candidate.title)
     for article in canonical:
         if (abs(_time(article["published_at"]) - candidate.published_at) <= NEAR_WINDOW
-                and trigram_similarity(article["title_original"], candidate.title_original) >= NEAR_THRESHOLD
-                and title_signature(article["title_original"]) == signature):
+                and trigram_similarity(article["title"], candidate.title) >= NEAR_THRESHOLD
+                and title_signature(article["title"]) == signature):
             return article["id"]
     return None
 
@@ -90,12 +91,7 @@ def add_articles(state: dict[str, Any], source: Source, incoming: list[Normalize
             "category": item.category,
             "title": item.title,
             "summary": item.summary,
-            "title_original": item.title_original,
-            "summary_original": item.summary_original,
             "language": item.language,
-            "translation_status": item.translation_status,
-            "translation_attempts": 0,
-            "translated_by": None,
             "source_url": item.url,
             "published_at": item.published_at.isoformat(),
             "related_tickers": item.related_tickers,
@@ -166,7 +162,7 @@ def _public_article(article: dict[str, Any]) -> dict[str, Any]:
         "summary": article["summary"],
         "source": {"slug": article["source_slug"], "name": article["source_name"]},
         "source_url": article["source_url"],
-        "translated": article["translation_status"] == "done",
+        "language": article["language"],
         "published_at": article["published_at"],
         "category": article["category"],
         "related_tickers": article["related_tickers"],
@@ -199,12 +195,9 @@ async def run(out: Path, now: datetime | None = None) -> dict[str, Any]:
     state_path = out / "state.json"
     state = load_state(state_path)
     finnhub_key = os.environ.get("FINNHUB_API_KEY") or None
-    deepl_key = os.environ.get("DEEPL_API_KEY") or None
 
     async with httpx.AsyncClient(timeout=20, headers={"User-Agent": USER_AGENT}) as client:
         await collect(client, state, now, finnhub_key)
-        translated = await translate_pending(state["articles"], build_backends(client, deepl_key),
-                                             state["translation"], now.date().isoformat())
         await refresh_quotes(client, state["quotes"])
     refresh_spread(state["articles"], state["quotes"])
     prune(state, now)
@@ -212,8 +205,7 @@ async def run(out: Path, now: datetime | None = None) -> dict[str, Any]:
     write_json(state_path, state)
     for name, data in public_files(state, now).items():
         write_json(out / "public" / name, data)
-    pending = sum(article["translation_status"] == "pending" for article in state["articles"])
-    log.info("done: %d articles, %d translated now, %d waiting", len(state["articles"]), translated, pending)
+    log.info("done: %d articles", len(state["articles"]))
     return state
 
 

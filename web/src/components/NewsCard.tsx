@@ -23,10 +23,10 @@ export function NewsCard({ article, featured = false, onTicker }: NewsCardProps)
     <article className={`group relative flex animate-fade-in flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm transition-all duration-300 ease-soft hover:-translate-y-1 hover:border-glow hover:shadow-md ${featured ? "md:col-span-2" : ""}`}>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
         {category && <span className="rounded-full bg-accent/10 px-2 py-0.5 font-semibold text-accent">{category}</span>}
+        <span title={article.language === "it" ? "Italiano" : "Inglese"} className="rounded border border-line px-1 text-[10px] font-semibold tracking-wide uppercase">{article.language}</span>
         <span className="font-medium text-text/80">{article.source.name}</span>
         <span aria-hidden="true">•</span>
         <time dateTime={article.published_at}>{relativeTime(article.published_at)}</time>
-        {article.translated && <span title="Tradotto automaticamente dalla lingua originale">· Tradotto</span>}
         {sentiment && (
           <span title={sentiment.label} className={sentiment.color}>
             <span aria-hidden="true">{sentiment.mark}</span>

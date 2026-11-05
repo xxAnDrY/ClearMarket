@@ -13,6 +13,7 @@ export interface YahooMeta {
   regularMarketTime?: number;
   previousClose?: number;
   chartPreviousClose?: number;
+  currentTradingPeriod?: { regular?: { start: number; end: number } };
 }
 
 export class UpstreamError extends Error {}
@@ -34,11 +35,11 @@ export function changePct(meta: YahooMeta): number | null {
 }
 
 /** La CDN di Netlify conserva la risposta: il traffico non si trasforma in chiamate a Yahoo. */
-export function json(body: unknown, cdnSeconds: number): Response {
+export function json(body: unknown, cdnSeconds: number, browserSeconds = 60): Response {
   return new Response(JSON.stringify(body), {
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "public, max-age=60",
+      "Cache-Control": browserSeconds ? `public, max-age=${browserSeconds}` : "no-cache",
       "Netlify-CDN-Cache-Control": `public, s-maxage=${cdnSeconds}, stale-while-revalidate=${cdnSeconds}`,
     },
   });

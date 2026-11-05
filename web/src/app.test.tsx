@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import chart from "../netlify/functions/chart";
 import movers from "../netlify/functions/movers";
+import quote, { toQuote } from "../netlify/functions/quote";
 import { filterArticles, isMarketOpen, safeUrl, type Article } from "./api";
+import { changeFrom, extremes, liveState, turningPoints, withLastPrice } from "./chartMath";
 import { FILTERS } from "./components/FilterTabs";
 import { InstrumentSearch } from "./components/InstrumentSearch";
 import { NewsCard } from "./components/NewsCard";
-import { formatPrice } from "./format";
+import { formatExact, formatPrice, formatSigned } from "./format";
 import { searchInstruments } from "./instruments";
 import { relativeTime } from "./time";
 
@@ -21,7 +23,7 @@ const article: Article = {
   summary: "Sommario",
   source: { slug: "ansa", name: "ANSA Economia" },
   source_url: "https://example.com/a",
-  translated: true,
+  language: "en",
   published_at: new Date(Date.now() - 5 * 60_000).toISOString(),
   category: "monetary_policy",
   related_tickers: ["AAPL"],
@@ -35,7 +37,7 @@ describe("NewsCard", () => {
     expect(link.getAttribute("href")).toBe("https://example.com/a");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    for (const text of ["· Tradotto", "AAPL", "Sentiment negativo", "Politica monetaria", "ANSA Economia"]) {
+    for (const text of ["en", "AAPL", "Sentiment negativo", "Politica monetaria", "ANSA Economia"]) {
       expect(screen.getByText(text)).toBeTruthy();
     }
   });
@@ -103,8 +105,20 @@ describe("funzioni dati", () => {
     const response = await chart(new Request("http://x/api/chart?symbol=CSPX.L&range=1D"));
     const body = await response.json();
     expect(body.points).toEqual([{ time: 1, value: 100 }, { time: 3, value: 110 }]);
-    expect(body.change_pct).toBe(10);
+    expect(body.previous_close).toBe(100);
     expect(String(fetchMock.mock.calls[0][0])).toContain("/CSPX.L?range=1d&interval=5m");
+  });
+
+  it("quote indica apertura e non resta in cache nel browser", async () => {
+    const session = { currentTradingPeriod: { regular: { start: 100, end: 200 } } };
+    expect(toQuote({ ...meta, ...session }, 150).is_open).toBe(true);
+    expect(toQuote({ ...meta, ...session }, 200).is_open).toBe(false);
+    expect(toQuote(meta, 150).is_open).toBe(false);
+    stubFetch({ chart: { result: [{ meta }] } });
+    const response = await quote(new Request("http://x/api/quote?symbol=SPY"));
+    expect((await response.json()).change_pct).toBe(10);
+    expect(response.headers.get("Cache-Control")).toBe("no-cache");
+    expect(response.headers.get("Netlify-CDN-Cache-Control")).toContain("s-maxage=10");
   });
 
   it("chart rifiuta richieste non valide senza chiamare Yahoo", async () => {
@@ -126,6 +140,46 @@ describe("funzioni dati", () => {
     const body = await (await movers()).json();
     expect(body.movers.map(({ label }: { label: string }) => label)).toEqual(["Nvidia", "Eni", "Tesla"]);
     expect(body.movers[0].change_pct).toBe(-10);
+  });
+});
+
+describe("grafico", () => {
+  const series = [10, 12, 9, 15, 11, 16].map((value, time) => ({ time, value }));
+
+  it("calcola variazione ed estremi", () => {
+    expect(changeFrom(101, 100)).toEqual({ absolute: 1, percent: 1 });
+    expect(changeFrom(99, 100).percent).toBe(-1);
+    expect(extremes(series)).toEqual({ high: series[5], low: series[2] });
+    expect(extremes([])).toBeNull();
+  });
+
+  it("trova le inversioni significative e ignora il rumore", () => {
+    expect(turningPoints(series).map(({ value }) => value)).toEqual([12, 15, 11]);
+    const noisy = [10, 10.1, 10, 10.1, 20].map((value, time) => ({ time, value }));
+    expect(turningPoints(noisy)).toEqual([]);
+    expect(turningPoints([{ time: 0, value: 5 }, { time: 1, value: 5 }])).toEqual([]);
+  });
+
+  it("LIVE solo con dati recenti a mercato aperto", () => {
+    expect(liveState(true, 1000, 1100)).toBe("live");
+    expect(liveState(true, 1000, 2000)).toBe("delayed");
+    expect(liveState(true, null, 2000)).toBe("delayed");
+    expect(liveState(false, 1000, 1001)).toBe("closed");
+  });
+
+  it("aggiunge l'ultima quotazione solo se piu' recente", () => {
+    const base = [{ time: 10, value: 1 }];
+    expect(withLastPrice(base, 20, 2)).toEqual([...base, { time: 20, value: 2 }]);
+    expect(withLastPrice(base, 10, 2)).toBe(base);
+    expect(withLastPrice(base, null, 2)).toBe(base);
+  });
+
+  it("formatta prezzo esatto e segno", () => {
+    expect(formatExact(1234.5, "EUR")).toBe("1.234,50 €");
+    expect(formatExact(4.8975, "EUR")).toBe("4,8975 €");
+    expect(formatExact(3.4991, "USD", 832)).toBe("3,50 USD");
+    expect(formatSigned(1.24, "1,24 €")).toBe("+1,24 €");
+    expect(formatSigned(-0.8, "-0,80 €")).toBe("-0,80 €");
   });
 });
 

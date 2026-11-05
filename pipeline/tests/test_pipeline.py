@@ -9,18 +9,7 @@ import respx
 from clearmarkets.catalog import SOURCES
 from clearmarkets.markets import INSTRUMENTS, parse_chart, parse_spread, refresh_spread
 from clearmarkets.normalize import RawArticle, normalize
-from clearmarkets.run import add_articles, empty_state, is_visible, prune, public_files, run
-from clearmarkets.translate import (
-    DEEPL_URL,
-    MYMEMORY_URL,
-    DeepLBackend,
-    MyMemoryBackend,
-    QuotaExceeded,
-    TranslationError,
-    build_backends,
-    translate_pending,
-)
-
+from clearmarkets.run import add_articles, empty_state, is_visible, load_state, prune, public_files, run
 NOW = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
 SOURCE = SOURCES[0]
 CHART = {"chart": {"result": [{"meta": {"regularMarketPrice": 50505.87, "chartPreviousClose": 51031.02,
@@ -56,7 +45,7 @@ def test_syndicated_title_is_linked_not_lost():
 
 def test_same_title_months_later_is_new_news():
     state = empty_state()
-    store(state, make("Fed holds rates steady", at=NOW - timedelta(days=20)))
+    store(state, make("Fed holds rates steady", at=NOW - timedelta(days=10)))
     store(state, make("Fed holds rates steady", "https://y.example/2"))
     assert sum(map(is_visible, state["articles"])) == 2
 
@@ -82,81 +71,23 @@ def test_very_old_items_are_ignored_and_retention_prunes():
     assert state["articles"] == []
 
 
-class Fake:
-    daily_chars = 10_000
-
-    def __init__(self, name="fake", error=None):
-        self.name, self.error, self.calls = name, error, 0
-
-    async def translate(self, texts, source):
-        self.calls += 1
-        if self.error:
-            raise self.error
-        return [f"IT {text}" for text in texts]
-
-
-def pending(*titles):
+def test_foreign_articles_stay_in_english_and_are_visible():
     state = empty_state()
-    for index, title in enumerate(titles):
-        store(state, make(title, f"https://x.example/{index}", NOW + timedelta(minutes=index), "en"))
-    return state["articles"]
+    store(state, make("Stocks rally on Wall Street", language="en"))
+    article = public_files(state, NOW)["feed.json"]["articles"][0]
+    assert article["title"] == "Stocks rally on Wall Street" and article["language"] == "en"
 
 
-async def test_foreign_articles_stay_hidden_until_translated():
-    articles = pending("Stocks rally")
-    assert articles[0]["translation_status"] == "pending" and not is_visible(articles[0])
-    assert await translate_pending(articles, [Fake()], {}, "2026-11-05") == 1
-    assert is_visible(articles[0]) and articles[0]["title"] == "IT Stocks rally"
-    assert articles[0]["title_original"] == "Stocks rally"
+def test_old_state_format_is_discarded(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"articles": [{"title": "vecchio"}]}), encoding="utf-8")
+    assert load_state(path) == empty_state()
 
 
-async def test_second_backend_takes_over_on_quota():
-    articles = pending("One", "Two")
-    first, second = Fake("first", QuotaExceeded("q")), Fake("second")
-    assert await translate_pending(articles, [first, second], {}, "2026-11-05") == 2
-    assert first.calls == 1 and second.calls == 2
-
-
-async def test_no_quota_keeps_articles_hidden_without_losing_attempts():
-    articles = pending("One")
-    assert await translate_pending(articles, [Fake("only", QuotaExceeded("q"))], {}, "2026-11-05") == 0
-    assert articles[0]["translation_status"] == "pending" and articles[0]["translation_attempts"] == 0
-
-
-async def test_daily_budget_stops_translation_and_resets_next_day():
-    articles = pending("One", "Two")
-    tiny = Fake()
-    tiny.daily_chars = 3
-    budget = {}
-    assert await translate_pending(articles, [tiny], budget, "2026-11-05") == 1
-    assert await translate_pending(articles, [tiny], budget, "2026-11-05") == 0
-    assert await translate_pending(articles, [tiny], budget, "2026-11-06") == 1
-
-
-async def test_repeated_errors_end_in_failed():
-    articles = pending("One")
-    for _ in range(5):
-        await translate_pending(articles, [Fake("bad", TranslationError("x"))], {}, "2026-11-05")
-    assert articles[0]["translation_status"] == "failed" and not is_visible(articles[0])
-
-
-@respx.mock
-async def test_mymemory_quota_warning_is_not_a_translation():
-    respx.get(MYMEMORY_URL).mock(return_value=httpx.Response(200, json={
-        "responseStatus": 429, "responseData": {"translatedText": "MYMEMORY WARNING: YOU USED ALL"}}))
-    async with httpx.AsyncClient() as client:
-        with pytest.raises(QuotaExceeded):
-            await MyMemoryBackend(client).translate(["Gold"], "en")
-
-
-@respx.mock
-async def test_deepl_request():
-    route = respx.post(DEEPL_URL).mock(return_value=httpx.Response(200, json={"translations": [{"text": "Ciao"}]}))
-    async with httpx.AsyncClient() as client:
-        assert await DeepLBackend(client, "k:fx").translate(["Hello"], "en") == ["Ciao"]
-        assert route.calls[0].request.headers["Authorization"] == "DeepL-Auth-Key k:fx"
-        assert [backend.name for backend in build_backends(client, None)] == ["mymemory"]
-        assert [backend.name for backend in build_backends(client, "k")] == ["deepl", "mymemory"]
+def test_catalog_slugs_are_unique_and_cover_both_languages():
+    slugs = [source.slug for source in SOURCES]
+    assert len(slugs) == len(set(slugs))
+    assert {source.language for source in SOURCES} == {"it", "en"}
 
 
 @pytest.mark.parametrize("text,value", [
@@ -183,14 +114,14 @@ def test_parse_chart():
     assert parse_chart(CHART)[1] == -1.03
 
 
-def test_public_feed_hides_pending_and_stale_quotes():
+def test_public_feed_hides_duplicates_and_stale_quotes():
     state = empty_state()
-    store(state, make("Italiana"), make("Foreign", "https://y.example/2", language="en"))
+    store(state, make("Italiana"), make("Italiana", "https://y.example/2"))
     state["quotes"]["OLD"] = {"order": 1, "as_of": (NOW - timedelta(days=8)).isoformat()}
     files = public_files(state, NOW)
     assert [item["title"] for item in files["feed.json"]["articles"]] == ["Italiana"]
     assert set(files["feed.json"]["articles"][0]) == {
-        "id", "title", "summary", "source", "source_url", "translated", "published_at", "category",
+        "id", "title", "summary", "source", "source_url", "language", "published_at", "category",
         "related_tickers", "sentiment"}
     assert files["markets.json"]["quotes"] == []
 
@@ -199,14 +130,11 @@ def mock_network(rss_title="La Bce lascia i tassi invariati"):
     respx.get(url__regex=r".*(rss|feed|\.xml|\.html).*").mock(
         return_value=httpx.Response(200, text=RSS.format(title=rss_title), headers={"ETag": '"v1"'}))
     respx.get(url__regex=r"https://query1\.finance\.yahoo\.com/.*").mock(return_value=httpx.Response(200, json=CHART))
-    respx.get(MYMEMORY_URL).mock(return_value=httpx.Response(200, json={
-        "responseStatus": 200, "responseData": {"translatedText": "Tradotto"}}))
 
 
 @respx.mock
 async def test_full_run_writes_site_files_and_second_run_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
-    monkeypatch.delenv("DEEPL_API_KEY", raising=False)
     mock_network()
     state = await run(tmp_path, NOW)
     assert len(state["articles"]) == 1  # stessa URL da tutte le fonti simulate

@@ -10,7 +10,7 @@ function localFunctions(): Plugin {
     configureServer(server) {
       server.middlewares.use("/api", async (req, res, next) => {
         const name = (req.url ?? "").split("?")[0].replace(/^\//, "");
-        if (!["chart", "movers"].includes(name)) return next();
+        if (!["chart", "movers", "quote"].includes(name)) return next();
         const { default: handler } = await server.ssrLoadModule(`/netlify/functions/${name}.ts`);
         const response: Response = await handler(new Request(`http://local${req.originalUrl}`));
         res.statusCode = response.status;

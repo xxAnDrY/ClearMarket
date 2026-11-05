@@ -35,10 +35,9 @@ jobs:
           mkdir -p data-out
           git fetch --depth 1 origin data && git archive FETCH_HEAD state.json | tar -x -C data-out || true
 
-      - name: Raccogli e traduci
+      - name: Raccogli le notizie
         run: python -m clearmarkets.run --out data-out
         env:
-          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
 
       # Un solo commit, sovrascritto ogni volta: lo storico non cresce all'infinito.

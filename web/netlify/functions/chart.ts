@@ -1,4 +1,4 @@
-import { changePct, failure, json, SYMBOL, yahooJson, type YahooMeta } from "../yahoo";
+import { failure, json, SYMBOL, yahooJson, type YahooMeta } from "../yahoo";
 
 const RANGES: Record<string, { range: string; interval: string; cdnSeconds: number }> = {
   "1D": { range: "1d", interval: "5m", cdnSeconds: 300 },
@@ -43,9 +43,7 @@ export default async (request: Request): Promise<Response> => {
       symbol: meta.symbol,
       name: meta.longName ?? meta.shortName ?? meta.symbol,
       currency: meta.currency ?? "",
-      price: meta.regularMarketPrice ?? null,
-      change_pct: selected.range === "1d" ? changePct(meta) : null,
-      as_of: meta.regularMarketTime ? new Date(meta.regularMarketTime * 1000).toISOString() : null,
+      previous_close: selected.range === "1d" ? meta.previousClose ?? meta.chartPreviousClose ?? null : null,
       points,
     }, selected.cdnSeconds);
   } catch {
