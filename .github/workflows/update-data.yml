@@ -7,6 +7,11 @@ on:
     - cron: "*/15 7-20 * * 1-5" # mercati aperti, orario UTC: circa ogni 15 minuti
     - cron: "5 * * * *"         # il resto del tempo: ogni ora
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - ".github/workflows/update-data.yml"
 
 permissions:
   contents: write
